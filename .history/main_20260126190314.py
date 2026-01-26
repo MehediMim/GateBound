@@ -1,0 +1,236 @@
+import pygame
+import sys
+import random
+
+# =========================
+# CONFIG
+# =========================
+ROOM_ORIGINAL = 720
+ROOM_SCALE = 0.5
+ROOM_DRAW = int(ROOM_ORIGINAL * ROOM_SCALE)  # 512
+FPS = 60
+PLAYER_SPEED = 5
+DEBUG = Truese
+
+GRID_W = 10
+GRID_H = 10
+
+# =========================
+# UI / LAYOUT (IMPORTANT)
+# =========================
+SIDEBAR_W = 240                     # LEFT UI ONLY
+PREVIEW_MARGIN = ROOM_DRAW // 2     # space for half rooms
+
+SCREEN_WIDTH  = SIDEBAR_W + ROOM_DRAW + PREVIEW_MARGIN * 2
+SCREEN_HEIGHT = ROOM_DRAW + PREVIEW_MARGIN * 2
+
+# =========================
+# CARD CONFIG
+# =========================
+CARD_TYPES = ["Jungle", "Desert", "Ice", "Volcanic", "Arcane"]
+CARD_MIN_POWER = 1
+CARD_MAX_POWER = 9
+MAX_CARDS = 5
+
+# =========================
+# INIT
+# =========================
+pygame.init()
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Tower Puzzle — Rooms (10x10)")
+clock = pygame.time.Clock()
+
+font = pygame.font.SysFont(None, 36)
+map_font = pygame.font.SysFont(None, 14)
+
+# =========================
+# ROOM TYPES + BG
+# =========================
+ROOM_TYPES = ["Jungle", "Desert", "Ice", "Volcanic", "Arcane"]
+
+BG_RAW = {
+    "Jungle": pygame.image.load("assets/bg_jungle.png").convert(),
+    "Desert": pygame.image.load("assets/bg_desert.png").convert(),
+    "Ice": pygame.image.load("assets/bg_ice.png").convert(),
+    "Volcanic": pygame.image.load("assets/bg_volcanic.png").convert(),
+    "Arcane": pygame.image.load("assets/bg_arcane.png").convert(),
+}
+
+BG = {
+    k: pygame.transform.smoothscale(v, (ROOM_DRAW, ROOM_DRAW))
+    for k, v in BG_RAW.items()
+}
+
+# =========================
+# GAME BOX (UNCHANGED LOGIC)
+# =========================
+GAME_BOX_RECT = pygame.Rect(
+    SIDEBAR_W + PREVIEW_MARGIN,
+    PREVIEW_MARGIN,
+    ROOM_DRAW,
+    ROOM_DRAW
+)
+
+ROOM_RECT = GAME_BOX_RECT.copy()
+
+# =========================
+# DOORS
+# =========================
+DOORS = {
+    "top":    pygame.Rect(ROOM_RECT.centerx - 56, ROOM_RECT.top - 112, 112, 112),
+    "bottom": pygame.Rect(ROOM_RECT.centerx - 56, ROOM_RECT.bottom,     112, 112),
+    "left":   pygame.Rect(ROOM_RECT.left - 112,   ROOM_RECT.centery - 56, 112, 112),
+    "right":  pygame.Rect(ROOM_RECT.right,        ROOM_RECT.centery - 56, 112, 112),
+}
+
+WALK_RECT = ROOM_RECT.copy()
+for r in DOORS.values():
+    WALK_RECT.union_ip(r)
+
+SPAWN = ROOM_RECT.center
+
+# =========================
+# WORLD (10x10 FIXED)
+# =========================
+rooms = {}
+
+def room_id(x, y):
+    return y * GRID_W + x
+
+def create_world():
+    for y in range(GRID_H):
+        for x in range(GRID_W):
+            rid = room_id(x, y)
+            links = {}
+            if y > 0: links["top"] = room_id(x, y - 1)
+            if y < GRID_H - 1: links["bottom"] = room_id(x, y + 1)
+            if x > 0: links["left"] = room_id(x - 1, y)
+            if x < GRID_W - 1: links["right"] = room_id(x + 1, y)
+
+            rooms[rid] = {
+                "id": rid,
+                "pos": (x, y),
+                "type": random.choice(ROOM_TYPES),
+                "links": links
+            }
+
+create_world()
+current = room_id(GRID_W // 2, GRID_H // 2)
+
+# =========================
+# PLAYER
+# =========================
+player = pygame.Rect(0, 0, 16, 16)
+player.center = SPAWN
+
+# =========================
+# CARDS
+# =========================
+cards = []
+
+def create_random_card():
+    return {
+        "type": random.choice(CARD_TYPES),
+        "power": random.randint(CARD_MIN_POWER, CARD_MAX_POWER)
+    }
+
+cards = [create_random_card() for _ in range(MAX_CARDS)]
+
+# =========================
+# MOVEMENT
+# =========================
+def move(dx, dy):
+    player.x += dx
+    player.y += dy
+    player.clamp_ip(WALK_RECT)
+
+def change_room(direction):
+    global current
+    if direction in rooms[current]["links"]:
+        current = rooms[current]["links"][direction]
+        player.center = SPAWN
+
+def handle_doors():
+    for d, r in DOORS.items():
+        if player.colliderect(r):
+            change_room(d)
+            break
+
+# =========================
+# DRAW UI
+# =========================
+def draw_cards():
+    x = 20
+    y = 40
+    w = SIDEBAR_W - 40
+    h = 60
+    gap = 10
+
+    for i, c in enumerate(cards):
+        rect = pygame.Rect(x, y + i * (h + gap), w, h)
+        pygame.draw.rect(screen, (120, 120, 120), rect, border_radius=6)
+        pygame.draw.rect(screen, (0, 0, 0), rect, 2, border_radius=6)
+        screen.blit(map_font.render(c["type"], True, (0,0,0)), (rect.x+8, rect.y+8))
+        screen.blit(map_font.render(f"Power: {c['power']}", True, (0,0,0)), (rect.x+8, rect.y+32))
+
+# =========================
+# LOOP
+# =========================
+while True:
+    clock.tick(FPS)
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+    k = pygame.key.get_pressed()
+    dx = dy = 0
+    if k[pygame.K_a] or k[pygame.K_LEFT]: dx -= PLAYER_SPEED
+    if k[pygame.K_d] or k[pygame.K_RIGHT]: dx += PLAYER_SPEED
+    if k[pygame.K_w] or k[pygame.K_UP]: dy -= PLAYER_SPEED
+    if k[pygame.K_s] or k[pygame.K_DOWN]: dy += PLAYER_SPEED
+
+    move(dx, dy)
+    handle_doors()
+
+    screen.fill((0,0,0))
+
+    # Sidebar
+    pygame.draw.rect(screen, (20,20,20), (0,0,SIDEBAR_W,SCREEN_HEIGHT))
+    pygame.draw.rect(screen, (180,180,180), (0,0,SIDEBAR_W,SCREEN_HEIGHT), 2)
+
+    # Game box border
+    pygame.draw.rect(screen, (30,30,30), GAME_BOX_RECT)
+    pygame.draw.rect(screen, (180,180,180), GAME_BOX_RECT, 2)
+
+    room = rooms[current]
+    cx, cy = ROOM_RECT.topleft
+    w = h = ROOM_DRAW
+    half = w // 2
+
+    # Center
+    screen.blit(BG[room["type"]], (cx, cy))
+
+    # Neighbors (VISIBLE, NOT CLIPPED)
+    if "top" in room["links"]:
+        t = rooms[room["links"]["top"]]
+        screen.blit(BG[t["type"]].subsurface((0, half, w, half)), (cx, cy-half))
+    if "bottom" in room["links"]:
+        b = rooms[room["links"]["bottom"]]
+        screen.blit(BG[b["type"]].subsurface((0, 0, w, half)), (cx, cy+w))
+    if "left" in room["links"]:
+        l = rooms[room["links"]["left"]]
+        screen.blit(BG[l["type"]].subsurface((half, 0, half, h)), (cx-half, cy))
+    if "right" in room["links"]:
+        r = rooms[room["links"]["right"]]
+        screen.blit(BG[r["type"]].subsurface((0, 0, half, h)), (cx+w, cy))
+
+    pygame.draw.rect(screen, (255,255,255), player)
+
+    draw_cards()
+
+    label = font.render(f"{room['type']} Room (ID {current})", True, (255,255,255))
+    screen.blit(label, (SCREEN_WIDTH//2 - label.get_width()//2, 10))
+
+    pygame.display.flip()
