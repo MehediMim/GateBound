@@ -562,6 +562,18 @@ def try_store_swap():
 
 
 create_world()
+def print_world_grid():
+    print("\n=== WORLD GRID (row, col → room_id) ===")
+    for y in range(GRID_H):
+        row = []
+        for x in range(GRID_W):
+            rid = room_id(x, y)
+            row.append(f"{rid:02d}")
+        print(f"Row {y}: " + "  ".join(row))
+    print("=====================================\n")
+
+print_world_grid()
+
 current = get_random_room_id()
 visited_rooms.add(current)
 explored_rooms.add(current)
@@ -1677,7 +1689,8 @@ def draw_store_popup():
 
     # ---- STORE CARD LIST (TEXT ONLY) ----
     list_x = popup_x + PAD_X
-    list_y = popup_y + 60
+    list_y = popup_y + 110
+
 
     row_h  = 24
 
