@@ -829,8 +829,8 @@ def handle_events(cards_start_y):
             if STORE_TRADE_BTN_RECT.collidepoint(mx, my):
                 d = can_interact_gate()
                 if d and selected_reward_index is not None:
-                    if try_swap_with_gate(d, selected_reward_index):
-                        selected_reward_index = None
+                    if try_swap_with_gate(d, selected_card_indices):
+                        selected_card_indices.clear()
                         show_gate_popup = False
                 return
 
@@ -1664,19 +1664,7 @@ def draw_sidebar_hud():
 
     # TEXT
     draw_hud_line(f"POINTS: {points}", cx, y0, HUD_FONT_BIG,(255, 80, 80))
-    draw_hud_line(f"START ROOM: #{START_ROOM}", cx, y0 + gap, HUD_FONT_NORMAL)
-    draw_hud_line(
-        f"END ROOM: #{finish_room}",
-        cx,
-        y0 + gap * 2,
-        HUD_FONT_NORMAL
-    )
-    draw_hud_line(
-        f"{rooms[current]['type'].upper()} CHAMBER: #{current}",
-        cx,
-        y0 + gap * 3,
-        HUD_FONT_NORMAL
-    )
+
 def draw_store_popup():
     global STORE_CARD_RECTS, STORE_TYPE_RECTS
 
@@ -1810,6 +1798,10 @@ def draw_gate_popup():
         return
 
     give_type = get_next_room_type(d)
+    # give_type = get_next_room_type(d)
+    if give_type is None:
+        return   # 🔥 DO NOT DRAW POPUP
+
     gate_card = get_or_create_gate_card(current, d)
     need_power = gate_card["power"]
     rewards = gate_card["rewards"]
