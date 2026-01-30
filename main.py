@@ -108,13 +108,31 @@ gate_message = ""
 gate_message_timer = 0
 
 
-# One card per gate (fixed once generated)
-gate_cards = {
-    "top":    {"rewards": [], "power": None},
-    "bottom": {"rewards": [], "power": None},
-    "left":   {"rewards": [], "power": None},
-    "right":  {"rewards": [], "power": None},
-}
+# Gate cards are now stored per room per direction
+# Format: gate_cards[room_id][direction] = {"power": X, "rewards": [...]}
+gate_cards = {}
+
+
+def get_or_create_gate_card(room_id, direction):
+    """Get existing gate card or create a new one for this specific room+direction"""
+    if room_id not in gate_cards:
+        gate_cards[room_id] = {}
+    
+    if direction not in gate_cards[room_id]:
+        # Create new gate card for this specific gate
+        power = random.randint(CARD_MIN_POWER, CARD_MAX_POWER)
+        rewards = []
+        for _ in range(2):
+            r = create_random_card()
+            r["power"] = power
+            rewards.append(r)
+        
+        gate_cards[room_id][direction] = {
+            "power": power,
+            "rewards": rewards
+        }
+    
+    return gate_cards[room_id][direction]
 
 
 
@@ -131,20 +149,6 @@ for _ in range(MAX_CARDS):
     c = create_random_card()
     c["power"] = random.randint(6, CARD_MAX_POWER)  # stronger start
     cards.append(c)
-
-def init_gate_cards():
-    for d in gate_cards:
-        power = random.randint(CARD_MIN_POWER, CARD_MAX_POWER)
-        gate_cards[d]["power"] = power
-
-        gate_cards[d]["rewards"] = []
-
-        for _ in range(2):
-            r = create_random_card()
-            r["power"] = power
-            gate_cards[d]["rewards"].append(r)
-
-
 
 
 selected_reward_index = None
@@ -559,7 +563,6 @@ def try_store_swap():
 
 create_world()
 current = get_random_room_id()
-init_gate_cards()
 visited_rooms.add(current)
 explored_rooms.add(current)
 
@@ -643,7 +646,8 @@ def try_swap_with_gate(d, selected_indices):
     global cards
 
     required_type = get_next_room_type(d)
-    required_power = gate_cards[d]["power"]
+    gate_card = get_or_create_gate_card(current, d)
+    required_power = gate_card["power"]
 
     chosen = [cards[i] for i in selected_indices]
 
@@ -672,7 +676,7 @@ def try_swap_with_gate(d, selected_indices):
         gate_message_timer = 90
         return False
 
-    reward = gate_cards[d]["rewards"][selected_reward_index]
+    reward = gate_card["rewards"][selected_reward_index]
     cards.append(reward)
     selected_reward_index = None
 
@@ -816,7 +820,8 @@ def handle_events(cards_start_y):
             if popup_rect.collidepoint(mx, my):
                 d = can_interact_gate()
                 if d:
-                    rewards = gate_cards[d]["rewards"]
+                    gate_card = get_or_create_gate_card(current, d)
+                    rewards = gate_card["rewards"]
                     cx = popup_x + 420//2
                     y = popup_y + 120
 
@@ -913,7 +918,8 @@ def can_use_card_for_gate(card, d):
         return False
 
     required_type = get_next_room_type(d)
-    required_power = gate_cards[d]["power"]
+    gate_card = get_or_create_gate_card(current, d)
+    required_power = gate_card["power"]
 
     if card["type"] != required_type:
         return False
@@ -956,7 +962,6 @@ def handle_doors():
             rooms[current].setdefault("open_gates", {})
             rooms[current]["open_gates"][opposite] = True
 
-            init_gate_cards()
             break
 
 def draw_press_e_hint():
@@ -1527,6 +1532,7 @@ def handle_howto_events():
 def reset_game():
     global current, visited_rooms, explored_rooms
     global cards, points, GAME_OVER, GAME_WIN, GAME_ENDED
+    global gate_cards
 
     points = MAX_POINTS
     GAME_OVER = False
@@ -1535,6 +1541,7 @@ def reset_game():
 
     visited_rooms.clear()
     explored_rooms.clear()
+    gate_cards.clear()  # Clear all gate cards for fresh start
 
     cards.clear()
     for _ in range(MAX_CARDS):
@@ -1546,7 +1553,6 @@ def reset_game():
     visited_rooms.add(current)
     explored_rooms.add(current)
 
-    init_gate_cards()
     player.center = SPAWN
 
 
@@ -1556,8 +1562,9 @@ def draw_gate_card_popup():
         return
 
     give_type = get_next_room_type(d)
-    power = gate_cards[d]["power"]
-    rewards = gate_cards[d]["rewards"]
+    gate_card = get_or_create_gate_card(current, d)
+    power = gate_card["power"]
+    rewards = gate_card["rewards"]
 
     cx = ROOM_RECT.centerx
     cy = ROOM_RECT.centery
@@ -1780,8 +1787,9 @@ def draw_gate_popup():
         return
 
     give_type = get_next_room_type(d)
-    need_power = gate_cards[d]["power"]
-    rewards = gate_cards[d]["rewards"]
+    gate_card = get_or_create_gate_card(current, d)
+    need_power = gate_card["power"]
+    rewards = gate_card["rewards"]
 
     cx = popup_x + popup_w//2
     y = popup_y + 80
@@ -1859,6 +1867,24 @@ while True:
         
         
         if GAME_ENDED:
+            # Handle events for game ended screen
+            for e in pygame.event.get():
+                if e.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                
+                # Return to main menu on ESC or SPACE or ENTER
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_ESCAPE or e.key == pygame.K_SPACE or e.key == pygame.K_RETURN:
+                        game_state = STATE_MENU
+                        # Reset game will be called when starting new game
+                        continue
+                
+                # Also allow mouse click to return to menu
+                if e.type == pygame.MOUSEBUTTONDOWN:
+                    game_state = STATE_MENU
+                    continue
+            
             screen.fill((0, 0, 0))
 
             if GAME_OVER:
@@ -1872,13 +1898,14 @@ while True:
                  SCREEN_HEIGHT // 2 - txt.get_height() // 2)
             )
 
-            hint = retro_small.render("Press ESC to quit", True, (180, 180, 180))
+            hint = retro_small.render("Press ESC or click to return to menu", True, (180, 180, 180))
             screen.blit(
                 hint,
                 (SCREEN_WIDTH // 2 - hint.get_width() // 2,
                  SCREEN_HEIGHT // 2 + 40)
             )
-
+            
+            draw_cursor()
             pygame.display.flip()
             continue   # 🔴 THIS STOPS ALL GAME LOGIC
         
