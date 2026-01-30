@@ -664,18 +664,17 @@ def try_swap_with_gate(d, selected_indices):
         gate_message_timer = 90
         return False
 
-    # REMOVE GIVEN CARDS
-    for i in sorted(selected_indices, reverse=True):
-        cards.pop(i)
-
-    # ADD REWARD CARD
-    # MUST SELECT A REWARD
-
+    # REWARD SELECTION CHECK (BEFORE REMOVING CARDS!)
     if selected_reward_index is None:
         gate_message = "CHOOSE A REWARD!"
         gate_message_timer = 90
         return False
 
+    # NOW IT'S SAFE TO REMOVE GIVEN CARDS
+    for i in sorted(selected_indices, reverse=True):
+        cards.pop(i)
+
+    # ADD REWARD CARD
     reward = gate_card["rewards"][selected_reward_index]
     cards.append(reward)
     selected_reward_index = None
