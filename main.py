@@ -5,6 +5,119 @@ import random
 # =========================
 # CONFIG
 # =========================
+HOWTO_TEXT = """
+HOW TO PLAY (MANDATORY)
+
+1. OVERALL GAME STRUCTURE
+The game takes place in a 10 × 10 grid of rooms.
+Each room is connected to neighboring rooms through gates on the top, bottom, left, or right side.
+
+At the start:
+- The player spawns in a random room.
+- One room in the grid is randomly selected as the escape room.
+- The player does NOT know the full map initially.
+
+Your goal is to:
+- Explore rooms
+- Open gates using cards
+- Reach the escape room before your points run out
+
+There is no combat in the game.
+
+2. POINTS SYSTEM (TIME PRESSURE)
+- You start the game with 1000 points.
+- Points decrease automatically every second.
+- This creates constant pressure to make decisions efficiently.
+
+If:
+- Points reach 0 → GAME OVER
+- You reach the escape room → YOU WIN
+
+Points do NOT regenerate. There is no way to gain extra points.
+
+3. PLAYER MOVEMENT
+Movement:
+- W / A / S / D or Arrow Keys
+- Movement is free inside the room
+- Walls block movement
+- Doors allow movement between rooms (only if unlocked)
+
+The player always spawns at the center of a room when entering it.
+
+4. ROOMS
+Each room:
+- Has a visual theme (Jungle, Desert, Ice, Volcanic, Arcane)
+- May contain up to four gates
+- Is part of the larger grid
+
+Room states:
+- CURRENT: the room you are in now
+- VISITED: rooms you have entered before
+- EXPLORED: rooms adjacent to visited rooms (seen but not entered)
+- UNKNOWN: rooms you have not discovered yet
+
+5. GATES (CORE MECHANIC)
+Each gate has:
+- A required card type
+- A required total power value
+
+Rules:
+- You can use multiple cards to open a gate
+- All used cards are consumed permanently
+- Once opened, a gate stays open forever
+- Opening a gate unlocks it from BOTH sides
+
+6. CARD SYSTEM
+Each card has:
+- TYPE: Jungle / Desert / Ice / Volcanic / Arcane
+- POWER: 1 to 9
+
+Only cards matching the gate’s required type can be used.
+Power values from selected cards are added together.
+If total power ≥ required power → gate can be opened
+
+7. SELECTING CARDS FOR A GATE
+- LEFT CLICK on cards to select them
+- Selected cards are highlighted
+- You can select more than one card
+
+8. GATE REWARDS
+- Two reward cards are shown
+- Choose one reward (LEFT CLICK)
+- Then click SWAP
+
+9. STORE SYSTEM
+- Limited uses
+1) RIGHT CLICK to select exactly 2 cards
+2) The two cards MUST be same type
+3) Choose a target type
+4) Click TRADE
+
+10. MINIMAP SYSTEM
+- Circular visibility radius
+- Only rooms inside the circle are fully visible
+- Red outline = Escape room (always visible)
+
+11. STRATEGY
+Key decisions:
+- Which gate to open first
+- When to use store
+- Which reward to take
+
+12. WIN CONDITION
+You win immediately when you enter the Escape Room.
+
+13. LOSE CONDITION
+You lose when points reach zero.
+
+14. IMPORTANT NOTES
+- No combat, no enemies
+- Difficulty comes from planning + time pressure
+- Each run differs due to random layout and rewards
+""".strip()
+
+
+
 ROOM_ORIGINAL = 800
 ROOM_SCALE = 0.5
 ROOM_DRAW = int(ROOM_ORIGINAL * ROOM_SCALE)  # 512
@@ -186,6 +299,106 @@ for _ in range(MAX_CARDS):
 selected_reward_index = None
 
 
+howto_scroll = 0  # global
+
+def wrap_text(text, font, max_w):
+    """Returns a list of wrapped lines."""
+    lines_out = []
+    for raw in text.splitlines():
+        raw = raw.rstrip()
+        if raw == "":
+            lines_out.append("")
+            continue
+
+        words = raw.split(" ")
+        cur = ""
+        for w in words:
+            test = w if cur == "" else (cur + " " + w)
+            if font.size(test)[0] <= max_w:
+                cur = test
+            else:
+                lines_out.append(cur)
+                cur = w
+        if cur != "":
+            lines_out.append(cur)
+    return lines_out
+def draw_howto_screen():
+    global howto_scroll
+    screen.blit(menu_bg, (0, 0))
+    # --- dark overlay for readability ---
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 160))  # alpha: 120–180 is ideal
+    screen.blit(overlay, (0, 0))
+    
+    # Background only
+
+    # ===== TITLE =====
+    title = retro_font.render("HOW TO PLAY", True, (255, 255, 255))
+    screen.blit(
+        title,
+        (SCREEN_WIDTH // 2 - title.get_width() // 2, 30)
+    )
+
+    # ===== CONTENT AREA (FULL SCREEN) =====
+    top_margin = 90
+    bottom_margin = 60
+    side_margin = 80
+
+    content_x = side_margin
+    content_y = top_margin
+    content_w = SCREEN_WIDTH - side_margin * 2
+    content_h = SCREEN_HEIGHT - top_margin - bottom_margin
+
+    # Columns
+    col_gap = 60
+    col_w = (content_w - col_gap) // 2
+
+    left_x = content_x
+    right_x = content_x + col_w + col_gap
+
+    # ===== TEXT =====
+    lines = wrap_text(HOWTO_TEXT, retro_small, col_w)
+    line_h = retro_small.get_height() + 6
+
+    # split evenly into columns
+    half = (len(lines) + 1) // 2
+    left_lines = lines[:half]
+    right_lines = lines[half:]
+
+    content_total_h = max(len(left_lines), len(right_lines)) * line_h
+    max_scroll = max(0, content_total_h - content_h)
+    howto_scroll = max(0, min(howto_scroll, max_scroll))
+
+    clip = pygame.Rect(content_x, content_y, content_w, content_h)
+    old_clip = screen.get_clip()
+    screen.set_clip(clip)
+
+    # LEFT COLUMN
+    y = content_y - howto_scroll
+    for ln in left_lines:
+        screen.blit(render_howto_line(ln), (left_x, y))
+        y += line_h
+
+    # RIGHT COLUMN
+    y = content_y - howto_scroll
+    for ln in right_lines:
+        screen.blit(render_howto_line(ln), (right_x, y))
+        y += line_h
+
+    screen.set_clip(old_clip)
+
+    # ===== FOOTER =====
+    hint = retro_small.render(
+        "ESC - Back   |   Mouse Wheel / ↑ ↓ to Scroll",
+        True, (180, 180, 180)
+    )
+    screen.blit(
+        hint,
+        (SCREEN_WIDTH // 2 - hint.get_width() // 2,
+         SCREEN_HEIGHT - 30)
+    )
+
+
 # =========================
 # INIT
 # =========================
@@ -245,6 +458,14 @@ def stop_music():
 menu_bg = pygame.image.load("assets/bg.png").convert()
 menu_bg = pygame.transform.smoothscale(menu_bg, (SCREEN_WIDTH, SCREEN_HEIGHT))
 
+logo_img = pygame.image.load("assets/logo.png").convert_alpha()
+
+# optional scale
+LOGO_W = 520
+LOGO_H = int(logo_img.get_height() * (LOGO_W / logo_img.get_width()))
+logo_img = pygame.transform.smoothscale(logo_img, (LOGO_W, LOGO_H))
+
+
 btn_1= pygame.image.load("assets/buttons/Asset 5.png").convert_alpha()
 # btn_start_hover = pygame.image.load("assets/btn_start_hover.png").convert_alpha()
 
@@ -300,7 +521,8 @@ MENU_BTN_H = 70
 SIDEBAR_HUD_W = 300
 SIDEBAR_HUD_H = 140
 
-
+LOGO_TOP_Y = -40
+LOGO_GAP = -40
 
 
 hud_bg_sidebar = pygame.transform.smoothscale(
@@ -331,8 +553,15 @@ menu_buttons = {
 }
 
 
+def get_visual_rect(img):
+    mask = pygame.mask.from_surface(img)
+    return mask.get_bounding_rects()[0]
+
 def draw_button(img, rect, text, font, text_color=(255,255,255)):
-    screen.blit(img, rect.topleft)
+    img_x = rect.centerx - img.get_width() // 2
+    img_y = rect.centery - img.get_height() // 2
+    screen.blit(img, (img_x, img_y))
+
 
     shadow = font.render(text, True, (0,0,0))
     main   = font.render(text, True, text_color)
@@ -398,6 +627,48 @@ passed_free_gate = {
 }
 store_popup_img = pygame.image.load("assets/buttons/menubg.png").convert_alpha()
 store_popup_img = pygame.transform.smoothscale(store_popup_img, (420, 420))
+
+btn_easy   = pygame.image.load("assets/buttons/Asset 5.png").convert_alpha()
+btn_medium = pygame.image.load("assets/buttons/Asset 5.png").convert_alpha()
+btn_hard   = pygame.image.load("assets/buttons/Asset 5.png").convert_alpha()
+
+# optional hover versions (if you want)
+btn_easy_h   = btn_3
+btn_medium_h = btn_3
+btn_hard_h   = btn_3
+DIFF_BTN_TEXT_OFFSET_X = -14
+ 
+def draw_difficulty_button(img, rect, title, desc):
+    visual = pygame.mask.from_surface(img).get_bounding_rects()[0]
+
+    draw_x = rect.centerx - (visual.x + visual.width // 2)
+    draw_y = rect.centery - (visual.y + visual.height // 2)
+
+    screen.blit(img, (draw_x, draw_y))
+
+
+    title_main = menu_font.render(title, True, (255,255,255))
+    title_outline = menu_font.render(title, True, (0,0,0))
+    desc_txt = retro_small.render(desc, True, (235,235,235))
+
+    spacing = 6
+    block_h = title_main.get_height() + spacing + desc_txt.get_height()
+    start_y = rect.centery - block_h // 2
+
+    # 🔥 OPTICAL CENTER FIX HERE
+    cx = rect.centerx + DIFF_BTN_TEXT_OFFSET_X
+
+    # TITLE
+    tx = cx - title_main.get_width() // 2
+    ty = start_y
+    for ox, oy in [(-2,0),(2,0),(0,-2),(0,2)]:
+        screen.blit(title_outline, (tx+ox, ty+oy))
+    screen.blit(title_main, (tx, ty))
+
+    # DESCRIPTION
+    dx = cx - desc_txt.get_width() // 2
+    dy = ty + title_main.get_height() + spacing
+    screen.blit(desc_txt, (dx, dy))
 
 
 def update_free_gate():
@@ -642,13 +913,7 @@ def move(dx, dy):
         if player.colliderect(w):
             if dx > 0: player.right = w.left
             if dx < 0: player.left = w.right
-            if moving:
-                footstep_timer += 1
-                if footstep_timer >= 15:
-                    SFX_FOOTSTEP.play()
-                    footstep_timer = 0
-            else:
-                footstep_timer = 0
+
 
 
 
@@ -947,6 +1212,41 @@ def handle_events(cards_start_y):
                         selected_card_indices.add(i)
                         SFX_CARD_SELECT.play()
                     return
+
+howto_scroll = 0  # global
+
+
+def wrap_text(text, font, max_w):
+    lines_out = []
+    for raw in text.splitlines():
+        raw = raw.rstrip()
+        if raw == "":
+            lines_out.append("")
+            continue
+
+        words = raw.split(" ")
+        cur = ""
+        for w in words:
+            test = w if cur == "" else cur + " " + w
+            if font.size(test)[0] <= max_w:
+                cur = test
+            else:
+                lines_out.append(cur)
+                cur = w
+        if cur:
+            lines_out.append(cur)
+    return lines_out
+
+
+def render_howto_line(line):
+    if line.startswith(tuple(str(i) + "." for i in range(1, 20))):
+        return retro_small.render(line, True, (255, 220, 120))
+    elif line.strip().isupper() and len(line.strip()) > 4:
+        return retro_small.render(line, True, (220, 220, 220))
+    elif line.startswith("-"):
+        return retro_small.render(line, True, (210, 210, 210))
+    else:
+        return retro_small.render(line, True, (190, 190, 190))
 
 
 def change_room(direction):
@@ -1424,21 +1724,35 @@ def draw_card_with_border(screen, card_type, x, y):
         (x, y, CARD_WIDTH, CARD_HEIGHT),
         2
     )
+    
+    
 def draw_main_menu():
     screen.blit(menu_bg, (0, 0))
     mx, my = pygame.mouse.get_pos()
 
-    # START
+    # ---- LOGO ----
+    logo_x = SCREEN_WIDTH // 2 - logo_img.get_width() // 2
+    logo_y = LOGO_TOP_Y
+    screen.blit(logo_img, (logo_x, logo_y))
+
+    # ---- BUTTON START Y (BASED ON LOGO HEIGHT) ----
+    buttons_start_y = logo_y + logo_img.get_height() + LOGO_GAP
+    btn_gap = 75
+
+    menu_buttons["start"].y = buttons_start_y
+    menu_buttons["howto"].y = buttons_start_y + btn_gap
+    menu_buttons["quit"].y  = buttons_start_y + btn_gap * 2
+
+    # ---- DRAW BUTTONS ----
     img = btn_3 if menu_buttons["start"].collidepoint(mx, my) else btn_1
     draw_button_with_text(img, menu_buttons["start"], "START GAME")
 
-    # HOW TO
     img = btn_3 if menu_buttons["howto"].collidepoint(mx, my) else btn_1
     draw_button_with_text(img, menu_buttons["howto"], "HOW TO PLAY")
 
-    # QUIT
     img = btn_3 if menu_buttons["quit"].collidepoint(mx, my) else btn_1
     draw_button_with_text(img, menu_buttons["quit"], "QUIT")
+
 
     
 def draw_card_power(x, y, power):
@@ -1570,18 +1884,28 @@ def handle_menu_events():
                 pygame.quit()
                 sys.exit()
 
-
 def handle_howto_events():
-    global game_state
+    global game_state, howto_scroll
 
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
 
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-            game_state = STATE_MENU
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_ESCAPE:
+                game_state = STATE_MENU
+            elif e.key == pygame.K_DOWN:
+                howto_scroll += 30
+            elif e.key == pygame.K_UP:
+                howto_scroll -= 30
+            elif e.key == pygame.K_PAGEDOWN:
+                howto_scroll += 300
+            elif e.key == pygame.K_PAGEUP:
+                howto_scroll -= 300
 
+        if e.type == pygame.MOUSEWHEEL:
+            howto_scroll -= e.y * 40
 
 def handle_difficulty_events():
     global game_state, current_difficulty, MAX_POINTS, POINT_DECAY_PER_SEC, store_uses_left
@@ -1603,8 +1927,8 @@ def handle_difficulty_events():
             center_x = SCREEN_WIDTH // 2
             start_y = SCREEN_HEIGHT // 2 - 100
             button_gap = 80
-            button_w = 300
-            button_h = 60
+            button_w, button_h = btn_easy.get_size()
+
 
             easy_rect = pygame.Rect(center_x - button_w // 2, start_y, button_w, button_h)
             medium_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap, button_w, button_h)
@@ -1662,32 +1986,33 @@ def draw_difficulty_screen():
     medium_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap, button_w, button_h)
     hard_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap * 2, button_w, button_h)
     
-    # Easy button
-    easy_color = (120, 255, 120) if easy_rect.collidepoint(mx, my) else (80, 200, 80)
-    pygame.draw.rect(screen, easy_color, easy_rect, border_radius=8)
-    pygame.draw.rect(screen, (255, 255, 255), easy_rect, 3, border_radius=8)
-    easy_text = menu_font.render("EASY", True, (255, 255, 255))
-    easy_desc = retro_small.render("Time: 1000 | Map: Far | Trades: 3", True, (230, 230, 230))
-    screen.blit(easy_text, (center_x - easy_text.get_width() // 2, start_y + 10))
-    screen.blit(easy_desc, (center_x - easy_desc.get_width() // 2, start_y + 38))
-    
-    # Medium button
-    medium_color = (255, 200, 80) if medium_rect.collidepoint(mx, my) else (200, 150, 60)
-    pygame.draw.rect(screen, medium_color, medium_rect, border_radius=8)
-    pygame.draw.rect(screen, (255, 255, 255), medium_rect, 3, border_radius=8)
-    medium_text = menu_font.render("MEDIUM", True, (255, 255, 255))
-    medium_desc = retro_small.render("Time: 500 | Map: Medium | Trades: 2", True, (230, 230, 230))
-    screen.blit(medium_text, (center_x - medium_text.get_width() // 2, start_y + button_gap + 10))
-    screen.blit(medium_desc, (center_x - medium_desc.get_width() // 2, start_y + button_gap + 38))
-    
-    # Hard button
-    hard_color = (255, 80, 80) if hard_rect.collidepoint(mx, my) else (200, 60, 60)
-    pygame.draw.rect(screen, hard_color, hard_rect, border_radius=8)
-    pygame.draw.rect(screen, (255, 255, 255), hard_rect, 3, border_radius=8)
-    hard_text = menu_font.render("HARD", True, (255, 255, 255))
-    hard_desc = retro_small.render("Time: 300 | Map: Close | Trades: 1", True, (230, 230, 230))
-    screen.blit(hard_text, (center_x - hard_text.get_width() // 2, start_y + button_gap * 2 + 10))
-    screen.blit(hard_desc, (center_x - hard_desc.get_width() // 2, start_y + button_gap * 2 + 38))
+    # Easy
+    easy_img = btn_easy_h if easy_rect.collidepoint(mx, my) else btn_easy
+    draw_difficulty_button(
+        easy_img,
+        easy_rect,
+        "EASY",
+        "Time: 1000 | Trades: 3"
+    )
+
+    # Medium
+    medium_img = btn_medium_h if medium_rect.collidepoint(mx, my) else btn_medium
+    draw_difficulty_button(
+        medium_img,
+        medium_rect,
+        "MEDIUM",
+        "Time: 500 | Trades: 2"
+    )
+
+    # Hard
+    hard_img = btn_hard_h if hard_rect.collidepoint(mx, my) else btn_hard
+    draw_difficulty_button(
+        hard_img,
+        hard_rect,
+        "HARD",
+        "Time: 300 | Trades: 1"
+    )
+
     
     # Back hint
     hint = retro_small.render("Press ESC to go back", True, (180, 180, 180))
@@ -1808,18 +2133,20 @@ def draw_sidebar_hud():
         DIFFICULTY_HARD: (255, 80, 80)
     }
     diff_color = diff_colors.get(current_difficulty, (255, 255, 255))
-
+    
+    
     # LINE 0 — DIFFICULTY LEVEL
     draw_hud_line(
         f"LEVEL: {current_difficulty.upper()}", 
         cx, 
-        y0, 
+        y0+15, 
         HUD_FONT_NORMAL,
         diff_color
     )
     
     # LINE 1 — POINTS (BIGGER)
-    draw_hud_line(f"POINTS: {points}", cx, y0 + gap, HUD_FONT_BIG, (255, 80, 80))
+    draw_hud_line(f"POINTS: {points}", cx, y0 + gap+15, HUD_FONT_BIG, (255, 80, 80))
+    
 def draw_store_popup():
     global STORE_CARD_RECTS, STORE_TYPE_RECTS
 
@@ -1846,7 +2173,7 @@ def draw_store_popup():
 
     # ---- STORE CARD LIST (TEXT ONLY) ----
     list_x = popup_x + PAD_X
-    list_y = popup_y + 110
+    list_y = popup_y + 90
 
 
     row_h  = 24
@@ -1854,7 +2181,8 @@ def draw_store_popup():
     for i, c in enumerate(cards):
         y = list_y + i * row_h
 
-        rect = pygame.Rect(list_x, y, popup_w - 60, row_h - 4)
+        rect = pygame.Rect(list_x, y, popup_w - 90, row_h - 4)
+
         STORE_CARD_RECTS.append((i, rect))
 
         # background
@@ -1878,16 +2206,31 @@ def draw_store_popup():
     start_x = popup_x + popup_w//2 - (len(CARD_TYPES)*type_gap)//2
 
     for i, t in enumerate(CARD_TYPES):
-        rect = pygame.Rect(start_x + i*type_gap, type_y, 70, 22)
+        rect = pygame.Rect(start_x + i*type_gap, type_y, 70, 24)
         STORE_TYPE_RECTS.append((t, rect))
 
-        col = (255,255,120) if t == store_target_type else (170,170,170)
-        pygame.draw.rect(screen, col, rect, 2)
+        if t == store_target_type:
+            bg = (80, 120, 160)        # selected bg
+            border = (255, 255, 120)
+            text_col = (255, 255, 255)
+        else:
+            bg = (40, 40, 40)          # 🔥 DARK bg (key fix)
+            border = (160, 160, 160)
+            text_col = (220, 220, 220)
 
+        # background fill (THIS FIXES VISIBILITY)
+        pygame.draw.rect(screen, bg, rect, border_radius=6)
+
+        # border
+        pygame.draw.rect(screen, border, rect, 2, border_radius=6)
+
+        txt = retro_small.render(t, True, text_col)
         screen.blit(
-            retro_small.render(t, True, col),
-            (rect.x + 6, rect.y + 3)
+            txt,
+            (rect.centerx - txt.get_width()//2,
+             rect.centery - txt.get_height()//2)
         )
+
 
     # ---- RESULT PREVIEW ----
     preview_y = type_y + 35
@@ -2073,11 +2416,11 @@ while True:
 
     if game_state == STATE_HOWTO:
         handle_howto_events()
-        draw_howto()
+        draw_howto_screen()
         draw_cursor()
         pygame.display.flip()
         continue
-    
+
     if game_state == STATE_DIFFICULTY:
         handle_difficulty_events()
         draw_difficulty_screen()
@@ -2188,7 +2531,18 @@ while True:
     else:
         moving = False
         player_frame = 0
-        
+    
+    # =========================
+    # FOOTSTEP SOUND (FIXED)
+    # =========================
+    if moving:
+        footstep_timer += 1
+        if footstep_timer >= 15:   # adjust for speed (10–20)
+            SFX_FOOTSTEP.play()
+            footstep_timer = 0
+    else:
+        footstep_timer = 0
+    
             
             
 
