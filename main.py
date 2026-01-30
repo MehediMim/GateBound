@@ -13,7 +13,7 @@ PLAYER_SPEED = 5
 DEBUG = False
 CARD_WIDTH  = 90
 CARD_HEIGHT = 160   # 180 × 16 / 9 ≈ 320
-
+footstep_timer = 0
 MAX_POINTS = 1000
 POINT_DECAY_PER_SEC = 1
 points = MAX_POINTS
@@ -35,6 +35,11 @@ STATE_GAME = "game"
 STATE_QUIT = "quit"
 
 game_state = STATE_MENU
+
+CARDS_START_X = 20
+CARDS_GAP_X = 15
+CARDS_ROW_OVERLAP = 28
+CARDS_PER_ROW = 4
 
 
 
@@ -87,11 +92,10 @@ PREVIEW_MARGIN = ROOM_DRAW // 2     # space for half rooms
 SCREEN_WIDTH  = SIDEBAR_W + ROOM_DRAW + PREVIEW_MARGIN * 2
 SCREEN_HEIGHT = ROOM_DRAW + PREVIEW_MARGIN * 2
 
+
 # =========================
 # STORE UI CONSTANTS
 # =========================
-STORE_BASE_Y = SCREEN_HEIGHT - 140
-STORE_BTN_RECT = pygame.Rect(20, STORE_BASE_Y + 65, 160, 38)
 
 
 CARD_TYPES = ["Jungle", "Desert", "Ice", "Volcanic", "Arcane"]
@@ -150,6 +154,13 @@ selected_reward_index = None
 # INIT
 # =========================
 pygame.init()
+pygame.mixer.init(
+    frequency=44100,
+    size=-16,
+    channels=2,
+    buffer=512
+)
+
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 idle_sheet = pygame.image.load("assets/player_idle.png").convert_alpha()
 walk_sheet = pygame.image.load("assets/player_walk.png").convert_alpha()
@@ -163,7 +174,34 @@ retro_font = pygame.font.Font("assets/retro.ttf", 26)
 retro_small = pygame.font.Font("assets/retro.ttf", 16)
 retro_power = pygame.font.Font("assets/retro.ttf", 48)  # ← change 48
 menu_font = pygame.font.Font("assets/retro.ttf", 26)
+# =========================
+# AUDIO
+# =========================
 
+# --- Music ---
+MUSIC_MENU = "assets/audio/music/menu.mp3"
+MUSIC_GAME = "assets/audio/music/gameplay.mp3"
+MUSIC_WIN  = "assets/audio/music/victory.mp3"
+
+# --- Sound Effects ---
+SFX_CLICK       = pygame.mixer.Sound("assets/audio/sfx/click.wav")
+SFX_GATE_OPEN   = pygame.mixer.Sound("assets/audio/sfx/gate_open.mp3")
+SFX_CARD_SELECT = pygame.mixer.Sound("assets/audio/sfx/card_select.mp3")
+SFX_SWAP        = pygame.mixer.Sound("assets/audio/sfx/swap.mp3")
+SFX_FOOTSTEP    = pygame.mixer.Sound("assets/audio/sfx/footstep.mp3")
+
+# Volumes
+pygame.mixer.music.set_volume(0.4)
+for s in [SFX_CLICK, SFX_GATE_OPEN, SFX_CARD_SELECT, SFX_SWAP, SFX_FOOTSTEP]:
+    s.set_volume(0.6)
+
+def play_music(track, loop=True):
+    pygame.mixer.music.stop()
+    pygame.mixer.music.load(track)
+    pygame.mixer.music.play(-1 if loop else 0)
+
+def stop_music():
+    pygame.mixer.music.stop()
 
 # =========================
 # MENU ASSETS
@@ -190,11 +228,44 @@ hud_bg = pygame.transform.smoothscale(hud_bg, (HUD_W, HUD_H))
 HUD_FONT_BIG = pygame.font.Font("assets/retro.ttf", 28)   # POINTS
 HUD_FONT_NORMAL = pygame.font.Font("assets/retro.ttf", 22)
 
+
+sidebar_bg = pygame.image.load("assets/leftbg.png").convert_alpha()
+sidebar_bg = pygame.transform.smoothscale(
+    sidebar_bg,
+    (SIDEBAR_W, SCREEN_HEIGHT)
+)
+bg_world = pygame.image.load("assets/rightbg.png").convert()
+bg_world = pygame.transform.smoothscale(
+    bg_world,
+    (ROOM_DRAW + PREVIEW_MARGIN * 2,
+     ROOM_DRAW + PREVIEW_MARGIN * 2)
+)
+STORE_BASE_Y = SCREEN_HEIGHT - 140
+STORE_BTN_RECT = pygame.Rect(20, STORE_BASE_Y + 65,btn_1.get_width(),btn_1.get_height())
+
+world_border_img = pygame.image.load("assets/buttons/border.png").convert_alpha()
+world_border_img = pygame.transform.smoothscale(
+    world_border_img,
+    (ROOM_DRAW + PREVIEW_MARGIN * 2, ROOM_DRAW + PREVIEW_MARGIN * 2)
+)
+
+minimap_bg = pygame.image.load("assets/minimap.png").convert_alpha()
+MINIMAP_SIZE = 160
+minimap_bg = pygame.transform.smoothscale(
+    minimap_bg,
+    (MINIMAP_SIZE, MINIMAP_SIZE)
+)
+
+
+
 MENU_BTN_W = 260
 MENU_BTN_H = 70
 
 SIDEBAR_HUD_W = 300
 SIDEBAR_HUD_H = 140
+
+
+
 
 hud_bg_sidebar = pygame.transform.smoothscale(
     hud_bg,
@@ -289,6 +360,9 @@ passed_free_gate = {
     "left": False,
     "right": False,
 }
+store_popup_img = pygame.image.load("assets/buttons/menubg.png").convert_alpha()
+store_popup_img = pygame.transform.smoothscale(store_popup_img, (420, 420))
+
 
 def update_free_gate():
     for d, g in FREE_GATES.items():
@@ -358,7 +432,7 @@ WALL_THICK = 32
 CARDS_TITLE_Y = 10
 CARDS_TITLE_H = int(btn_1.get_height() * 0.50) + 6
 
-
+show_gate_popup = False
 SIDEBAR_HUD_Y = 20
 SIDEBAR_HUD_H = HUD_H
 CARDS_TOP_PADDING = 20
@@ -386,6 +460,9 @@ WALLS = {
     ),
 }
 
+close_btn_img = pygame.image.load("assets/buttons/Asset 10.png").convert_alpha()
+close_btn_img = pygame.transform.smoothscale(close_btn_img, (32, 32))
+STORE_CLOSE_BTN_RECT = pygame.Rect(0, 0, 32, 32)
 
 WALK_RECT = ROOM_RECT.copy()
 for r in DOORS.values():
@@ -473,6 +550,7 @@ def try_store_swap():
     store_selected_indices.clear()
     store_target_type = None
     store_uses_left -= 1
+    SFX_SWAP.play()
 
     gate_message = f"TRADE SUCCESS! POWER {new_power}"
     gate_message_timer = 90
@@ -501,6 +579,10 @@ while abs(rooms[finish_room]["pos"][0] - rooms[current]["pos"][0]) < 4:
 # CARDS
 # =========================
 
+popup_w = 420
+popup_h = 300
+popup_x = SCREEN_WIDTH // 2 - popup_w // 2
+popup_y = SCREEN_HEIGHT // 2 - popup_h // 2
 
 # =========================
 # MOVEMENT
@@ -512,6 +594,14 @@ def move(dx, dy):
         if player.colliderect(w):
             if dx > 0: player.right = w.left
             if dx < 0: player.left = w.right
+            if moving:
+                footstep_timer += 1
+                if footstep_timer >= 15:
+                    SFX_FOOTSTEP.play()
+                    footstep_timer = 0
+            else:
+                footstep_timer = 0
+
 
 
 
@@ -591,6 +681,7 @@ def try_swap_with_gate(d, selected_indices):
 
     # open gate both sides
     rooms[cur]["open_gates"][d] = True
+    SFX_GATE_OPEN.play()
 
     opposite = {"top":"bottom", "bottom":"top", "left":"right", "right":"left"}
     rooms[nxt]["open_gates"][opposite[d]] = True
@@ -616,15 +707,6 @@ def draw_button_with_text(img, rect, text):
 
     screen.blit(text_main, (tx, ty))
 
-def draw_store_button_only():
-    pygame.draw.rect(screen, (120,160,120), STORE_BTN_RECT, border_radius=6)
-    pygame.draw.rect(screen, (0,0,0), STORE_BTN_RECT, 2)
-
-    txt = retro_small.render("STORE", True, (0,0,0))
-    screen.blit(txt, (
-        STORE_BTN_RECT.centerx - txt.get_width()//2,
-        STORE_BTN_RECT.centery - txt.get_height()//2
-    ))
 
 def draw_points():
     txt = retro_font.render(f"POINTS: {points}", True, (255, 255, 255))
@@ -644,121 +726,157 @@ def draw_start_end_rooms():
     screen.blit(end_txt, (SIDEBAR_W + 20, y_base + 20))
 
 
-def handle_events():
+TRADE_BTN_RECT = pygame.Rect(0, 0, btn_1.get_width(), btn_1.get_height())
+STORE_TRADE_BTN_RECT = pygame.Rect(0, 0, btn_1.get_width(), btn_1.get_height())
+STORE_CARD_RECTS = []
+STORE_TYPE_RECTS = []
+
+def handle_events(cards_start_y):
     global pressed_e
     global selected_card_indices
     global selected_reward_index
     global store_selected_indices
     global store_target_type
     global show_store_popup
+    global show_gate_popup
 
     pressed_e = False
 
-    start_x = 20
-    start_y = CARDS_START_Y
-
-    gap_x = 10
-    row_overlap = 22  
-    gap_y = CARD_HEIGHT - row_overlap
-    cards_per_row = 4
+    start_x = CARDS_START_X
+    gap_x   = CARDS_GAP_X
+    gap_y   = CARD_HEIGHT - CARDS_ROW_OVERLAP
+    cards_per_row = CARDS_PER_ROW
 
     for e in pygame.event.get():
 
+        # ===============================
+        # QUIT
+        # ===============================
         if e.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
 
+        # ===============================
+        # KEYBOARD
+        # ===============================
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_e:
                 pressed_e = True
 
+            if e.key == pygame.K_ESCAPE:
+                show_store_popup = False
+                show_gate_popup = False
+                selected_reward_index = None
+                return
+
+        # ===============================
+        # MOUSE EVENTS ONLY
+        # ===============================
         if e.type != pygame.MOUSEBUTTONDOWN:
             continue
 
         mx, my = e.pos
 
-        # =====================================
-        # LEFT CLICK
-        # =====================================
-        if e.button == 1 and STORE_BTN_RECT.collidepoint(mx, my):
+        # ===============================
+        # TRADE BUTTON (LEFT SIDEBAR)
+        # ===============================
+        if e.button == 1 and TRADE_BTN_RECT.collidepoint(mx, my):
             show_store_popup = True
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-            show_store_popup = False
-        if show_store_popup:
+            show_gate_popup = False
             return
 
+        # ==================================================
+        # GATE SWAP POPUP (DO NOT BLOCK SIDEBAR CARDS)
+        # ==================================================
+        if show_gate_popup:
+            popup_x = SCREEN_WIDTH // 2 - 420 // 2 + 120
+            popup_y = SCREEN_HEIGHT // 2 - 420 // 2
+            # sync close button rect for gate popup
+            STORE_CLOSE_BTN_RECT.topleft = (
+                popup_x + 420 - 36,
+                popup_y + 12
+            )
 
-        if e.button == 1:
 
-            # -------- GATE CARD SELECTION --------
-            if show_swap_ui:
-                for i, c in enumerate(cards):
-                    row = i // cards_per_row
-                    col = i % cards_per_row
-                    x = start_x + col * (CARD_WIDTH + gap_x)
-                    y = start_y + row * gap_y   # ✅ MUST MATCH draw_cards()
+            # ---- SWAP BUTTON ----
+            if STORE_TRADE_BTN_RECT.collidepoint(mx, my):
+                d = can_interact_gate()
+                if d and selected_card_indices:
+                    if try_swap_with_gate(d, selected_card_indices):
+                        selected_card_indices.clear()
+                        show_gate_popup = False
+                return
 
+            # ---- REWARD SELECTION (ONLY IF CLICK INSIDE POPUP) ----
+            popup_x = SCREEN_WIDTH//2 - 420//2+120
+            popup_y = SCREEN_HEIGHT//2 - 420//2
+            popup_rect = pygame.Rect(popup_x, popup_y, 420, 420)
 
-                    if pygame.Rect(x, y, CARD_WIDTH, CARD_HEIGHT).collidepoint(mx, my):
-                        if i in selected_card_indices:
-                            selected_card_indices.remove(i)
-                        else:
-                            selected_card_indices.add(i)
-                        break
-
-                # -------- GATE REWARD SELECTION --------
+            if popup_rect.collidepoint(mx, my):
                 d = can_interact_gate()
                 if d:
                     rewards = gate_cards[d]["rewards"]
-                    cx = ROOM_RECT.centerx
-                    cy = ROOM_RECT.centery
+                    cx = popup_x + 420//2
+                    y = popup_y + 120
 
                     for i, r in enumerate(rewards):
-                        rx = cx + 30 + i * (CARD_WIDTH + 20)
-                        ry = cy - 110
+                        rx = cx - CARD_WIDTH - 20 + i*(CARD_WIDTH + 40)
+                        ry = y
                         if pygame.Rect(rx, ry, CARD_WIDTH, CARD_HEIGHT).collidepoint(mx, my):
                             selected_reward_index = i
-                            break
+                return
+            # ⬇️ IMPORTANT: clicks OUTSIDE popup fall through to sidebar cards
 
-                # -------- GATE SWAP BUTTON --------
-                btn = draw_swap_button()
-                if btn and btn.collidepoint(mx, my):
-                    if d and selected_card_indices:
-                        if try_swap_with_gate(d, selected_card_indices):
-                            selected_card_indices.clear()
+        # ==================================================
+        # STORE POPUP (BLOCK EVERYTHING)
+        # ==================================================
+        if show_store_popup:
+            if STORE_CLOSE_BTN_RECT.collidepoint(mx, my):
+                show_store_popup = False
+                store_selected_indices.clear()
+                store_target_type = None
+                return
 
-            # -------- STORE TARGET TYPE --------
-            type_y = STORE_BASE_Y + 28
-            for i, t in enumerate(CARD_TYPES):
-                r = pygame.Rect(20 + i * 80, type_y, 70, 22)
-                if r.collidepoint(mx, my):
-                    store_target_type = t
+            if e.button == 3:
+                for i, rect in STORE_CARD_RECTS:
+                    if rect.collidepoint(mx, my):
+                        if i in store_selected_indices:
+                            store_selected_indices.remove(i)
+                        elif len(store_selected_indices) < 2:
+                            store_selected_indices.add(i)
+                        return
 
-                if r.collidepoint(mx, my):
-                    store_target_type = t
+            if e.button == 1:
+                for t, rect in STORE_TYPE_RECTS:
+                    if rect.collidepoint(mx, my):
+                        store_target_type = t
+                        return
 
-            # -------- STORE TRADE BUTTON --------
-            if STORE_BTN_RECT.collidepoint(mx, my):
-                try_store_swap()
+                if STORE_TRADE_BTN_RECT.collidepoint(mx, my):
+                    try_store_swap()
+                    return
 
-        # =====================================
-        # RIGHT CLICK — STORE CARD SELECTION
-        # =====================================
-        if e.button == 3:
-            for i, c in enumerate(cards):
+            return
+
+        # ==================================================
+        # LEFT SIDEBAR CARD SELECTION (ALLOWED DURING GATE POPUP)
+        # ==================================================
+        if e.button == 1:
+
+            for i, c in enumerate(cards[:8]):
                 row = i // cards_per_row
                 col = i % cards_per_row
+
                 x = start_x + col * (CARD_WIDTH + gap_x)
-                y = start_y + row * (CARD_HEIGHT + gap_y)
+                y = cards_start_y + row * gap_y
 
                 if pygame.Rect(x, y, CARD_WIDTH, CARD_HEIGHT).collidepoint(mx, my):
-                    if i in store_selected_indices:
-                        store_selected_indices.remove(i)
+                    if i in selected_card_indices:
+                        selected_card_indices.remove(i)
                     else:
-                        if len(store_selected_indices) < 2:
-                            store_selected_indices.add(i)
-                    break
-
+                        selected_card_indices.add(i)
+                        SFX_CARD_SELECT.play()
+                    return
 
 
 def change_room(direction):
@@ -840,10 +958,8 @@ def draw_press_e_hint():
 # =========================
 # DRAW UI
 # =========================
-def draw_banner_title(text, center_x, y):
+def draw_banner_title(text, center_x, y, scale=1):
     bw, bh = btn_1.get_size()
-    TARGET_WIDTH = int(SIDEBAR_W * 0.5)
-    scale = TARGET_WIDTH / bw
 
     sw = int(bw * scale)
     sh = int(bh * scale)
@@ -853,7 +969,6 @@ def draw_banner_title(text, center_x, y):
 
     screen.blit(banner, (x, y))
 
-    # text
     text_main = menu_font.render(text, True, (255, 255, 255))
     text_outline = menu_font.render(text, True, (0, 0, 0))
 
@@ -864,9 +979,7 @@ def draw_banner_title(text, center_x, y):
         screen.blit(text_outline, (tx + ox, ty + oy))
 
     screen.blit(text_main, (tx, ty))
-
-    return sh   # ✅ IMPORTANT
-
+    return sh
 
 
 def draw_cards_title():
@@ -876,16 +989,13 @@ def draw_cards_title():
     banner_h = draw_banner_title("CURRENT CARDS", center_x, y)
     return y + banner_h
 
-def draw_cards():
-    start_x = 20
+def draw_cards(start_y):
 
-    # ⬇ cards start AFTER HUD + title
-    start_y = CARDS_START_Y
+    start_x = CARDS_START_X
+    gap_x = CARDS_GAP_X
+    gap_y = CARD_HEIGHT - CARDS_ROW_OVERLAP
+    cards_per_row = CARDS_PER_ROW
 
-    gap_x = 15
-    row_overlap = 28             # overlap amount
-    gap_y = CARD_HEIGHT - row_overlap
-    cards_per_row = 4
 
     for i, c in enumerate(cards):
         key = CARD_IMAGE_KEY[c["type"]]
@@ -919,16 +1029,16 @@ def draw_cards():
                 (255, 255, 120),   # glow color
                 (x-3, y-3, CARD_WIDTH+6, CARD_HEIGHT+6),
                 3,
-                border_radius=10
+                border_radius=0
             )
 
-        pygame.draw.rect(
-            screen,
-            (220, 220, 220),
-            (x, y, CARD_WIDTH, CARD_HEIGHT),
-            2,
-            border_radius=8
-        )
+        # pygame.draw.rect(
+        #     screen,
+        #     (220, 220, 220),
+        #     (x, y, CARD_WIDTH, CARD_HEIGHT),
+        #     2,
+        #     border_radius=0
+        # )
         if i in store_selected_indices:
             pygame.draw.rect(
                 screen,
@@ -960,7 +1070,7 @@ def draw_cards():
         screen.blit(power_text, (px, py))
 
 
-CARDS_START_Y = draw_cards_title() + 12
+# CARDS_START_Y = draw_cards_title() + 12
 
 def get_free_gate_dir():
     for d, g in FREE_GATES.items():
@@ -975,13 +1085,13 @@ def draw_full_card(card, x, y):
     screen.blit(card_images[key], (x, y))
 
     # border
-    pygame.draw.rect(
-        screen,
-        (220, 220, 220),
-        (x, y, CARD_WIDTH, CARD_HEIGHT),
-        2,
-        border_radius=8
-    )
+    # pygame.draw.rect(
+    #     screen,
+    #     (220, 220, 220),
+    #     (x, y, CARD_WIDTH, CARD_HEIGHT),
+    #     2,
+    #     border_radius=8
+    # )
 
     draw_card_power(x, y, card["power"])
 
@@ -1039,57 +1149,73 @@ def draw_debug_borders():
             (x, y, CARD_WIDTH, CARD_HEIGHT),
             1
         )
-def draw_store_ui(base_x=0, base_y=0):
+def draw_store_ui(base_x, base_y):
+    popup_w = 420
+    center_x = base_x + popup_w // 2
 
-    center_x = SIDEBAR_W // 2
+    # ---- TITLE ----
+    title_h = draw_banner_title("STORE", center_x, base_y + 20)
 
-    draw_banner_title(
-        "STORE",
-        base_x + SIDEBAR_W // 2,
-        base_y + 20,
-        scale=0.45
-    )
+    # ---- USES LEFT ----
+    uses = retro_small.render(f"USES LEFT: {store_uses_left}", True, (200,200,200))
+    screen.blit(uses, (center_x - uses.get_width()//2, base_y + 20 + title_h + 10))
 
+    # ---- YOUR CARDS ----
+    # next_y = draw_store_cards(base_x, base_y)
 
-
-    uses = retro_small.render(f"USES LEFT: {store_uses_left}", True, (200, 200, 200))
-    screen.blit(uses, (base_x + 20, base_y + 80))
-
-
-    hint = retro_small.render("GIVE 2 SAME - GET 1", True, (170, 170, 170))
-    screen.blit(hint, (20, STORE_BASE_Y))
+    # ---- RULE TEXT ----
+    hint = retro_small.render("GIVE 2 SAME - GET 1", True, (170,170,170))
+    screen.blit(hint, (center_x - hint.get_width()//2, next_y + 10))
 
     # ---- TARGET TYPE ----
-    type_y = base_y + 130
-
-    type_gap = 80
+    type_y = next_y + 40
+    type_gap = 75
+    start_x = center_x - (len(CARD_TYPES)*type_gap)//2
 
     for i, t in enumerate(CARD_TYPES):
-        x = 20 + i * type_gap
-        rect = pygame.Rect(x, type_y, 70, 22)
+        rect = pygame.Rect(start_x + i*type_gap, type_y, 70, 22)
 
         if t == store_target_type:
-            pygame.draw.rect(screen, (255, 255, 120), rect, 2)
-            col = (255, 255, 120)
+            pygame.draw.rect(screen, (255,255,120), rect, 2)
+            col = (255,255,120)
         else:
-            pygame.draw.rect(screen, (90, 90, 90), rect, 1)
-            col = (170, 170, 170)
+            pygame.draw.rect(screen, (90,90,90), rect, 1)
+            col = (170,170,170)
 
         txt = retro_small.render(t, True, col)
-        screen.blit(txt, (rect.centerx - txt.get_width() // 2,
-                          rect.centery - txt.get_height() // 2))
+        screen.blit(txt, (rect.centerx - txt.get_width()//2,
+                          rect.centery - txt.get_height()//2))
 
     # ---- TRADE BUTTON ----
-    btn = pygame.Rect(base_x + 20, base_y + 200, 160, 38)
-    pygame.draw.rect(screen, (120,160,120), btn, border_radius=6)
-    pygame.draw.rect(screen, (0,0,0), btn, 2)
-    
+    btn_rect = pygame.Rect(
+        center_x - btn_1.get_width()//2,
+        type_y + 45,
+        btn_1.get_width(),
+        btn_1.get_height()
+    )
 
-    txt = retro_small.render("TRADE", True, (0, 0, 0))
-    screen.blit(txt, (STORE_BTN_RECT.centerx - txt.get_width() // 2,
-                      STORE_BTN_RECT.centery - txt.get_height() // 2))
+    mx, my = pygame.mouse.get_pos()
+    hover = btn_rect.collidepoint(mx, my)
+    draw_image_button(btn_rect, "TRADE", hover)
+
+    return btn_rect
 
 
+def draw_trade_button_center(cards_end_y):
+    # CENTER INSIDE LEFT SIDEBAR
+    TRADE_BTN_RECT.x = SIDEBAR_W // 2 - btn_1.get_width() // 2
+    TRADE_BTN_RECT.y = cards_end_y + 40
+
+    mx, my = pygame.mouse.get_pos()
+    hover = TRADE_BTN_RECT.collidepoint(mx, my)
+
+    draw_image_button(TRADE_BTN_RECT, "TRADE", hover)
+    return TRADE_BTN_RECT
+
+
+def draw_image_button(rect, text, hover=False):
+    img = btn_3 if hover else btn_1
+    draw_button_with_text(img, rect, text)
 
 def get_blocking_walls():
     blocks = []
@@ -1124,10 +1250,10 @@ def get_next_room_type(d):
         return None
     return rooms[nxt]["type"]
 def draw_minimap():
-    panel_size = 160
+    panel_size = MINIMAP_SIZE
     panel_x = SCREEN_WIDTH - panel_size - 30
     panel_y = SCREEN_HEIGHT - panel_size - 30
-
+    screen.blit(minimap_bg, (panel_x, panel_y))
     center = (
         panel_x + panel_size // 2,
         panel_y + panel_size // 2
@@ -1140,8 +1266,8 @@ def draw_minimap():
     radius = 5  # how many rooms around current
 
     # background circle
-    pygame.draw.circle(screen, (20, 20, 20), center, radius_px)
-    pygame.draw.circle(screen, (180, 180, 180), center, radius_px, 2)
+    # pygame.draw.circle(screen, (20, 20, 20), center, radius_px)
+    # pygame.draw.circle(screen, (180, 180, 180), center, radius_px, 2)
 
     cx0, cy0 = rooms[current]["pos"]
 
@@ -1356,9 +1482,11 @@ def handle_menu_events():
             sys.exit()
 
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            SFX_CLICK.play()
             mx, my = e.pos
 
             if menu_buttons["start"].collidepoint(mx, my):
+                play_music(MUSIC_GAME)
                 reset_game()
                 game_state = STATE_GAME
 
@@ -1450,27 +1578,26 @@ def draw_swap_button():
     if not show_swap_ui or not selected_card_indices:
         return None
 
-
     rect = pygame.Rect(
-        ROOM_RECT.centerx - 60,
-        ROOM_RECT.centery + CARD_HEIGHT//2 + 20,
-        120, 40
+        ROOM_RECT.centerx - btn_1.get_width() // 2,
+        ROOM_RECT.centery + CARD_HEIGHT // 2 + 30,
+        btn_1.get_width(),
+        btn_1.get_height()
     )
 
-    pygame.draw.rect(screen, (80,180,80), rect, border_radius=6)
-    pygame.draw.rect(screen, (0,0,0), rect, 2)
+    mx, my = pygame.mouse.get_pos()
+    hover = rect.collidepoint(mx, my)
 
-    txt = retro_small.render("SWAP", True, (0,0,0))
-    screen.blit(txt, (rect.centerx - txt.get_width()//2,
-                      rect.centery - txt.get_height()//2))
+    draw_image_button(rect, "SWAP", hover)
     return rect
 
-
 def check_finish():
-    global GAME_WIN
+    global GAME_WIN, GAME_ENDED
     if current == finish_room:
         GAME_WIN = True
         GAME_ENDED = True
+        play_music(MUSIC_WIN, loop=False)
+
 
 def draw_sidebar_hud():
     # center HUD inside sidebar
@@ -1504,22 +1631,191 @@ def draw_sidebar_hud():
         y0 + gap * 3,
         HUD_FONT_NORMAL
     )
-
 def draw_store_popup():
+    global STORE_CARD_RECTS, STORE_TYPE_RECTS
+
+    STORE_CARD_RECTS.clear()
+    STORE_TYPE_RECTS.clear()
+
+    popup_w, popup_h = 420, 420
+
+
+
+    popup_x = SCREEN_WIDTH//2 - popup_w//2
+    popup_y = SCREEN_HEIGHT//2 - popup_h//2
+    # preview_y = popup_y + 160   # DEFAULT SAFE VALUE
+
     overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     overlay.fill((0,0,0,140))
     screen.blit(overlay, (0,0))
 
-    popup_w = 420
-    popup_h = 300
-    x = SCREEN_WIDTH//2 - popup_w//2
-    y = SCREEN_HEIGHT//2 - popup_h//2
+    screen.blit(store_popup_img, (popup_x, popup_y))
 
-    pygame.draw.rect(screen, (30,30,30), (x,y,popup_w,popup_h), border_radius=10)
-    pygame.draw.rect(screen, (200,200,200), (x,y,popup_w,popup_h), 2)
 
-    # draw store contents INSIDE popup
-    draw_store_ui(0, STORE_BASE_Y - 60)
+    draw_banner_title("STORE", popup_x + popup_w//2, popup_y + 15)
+    y_cursor = popup_y + 80
+
+    # ---- STORE CARD LIST (TEXT ONLY) ----
+    list_x = popup_x + PAD_X
+    list_y = popup_y + PAD_Y
+
+    row_h  = 26
+
+    for i, c in enumerate(cards):
+        y = list_y + i * row_h
+
+        rect = pygame.Rect(list_x, y, popup_w - 60, row_h - 4)
+        STORE_CARD_RECTS.append((i, rect))
+
+        # background
+        if i in store_selected_indices:
+            pygame.draw.rect(screen, (80,120,160), rect, border_radius=4)
+        else:
+            pygame.draw.rect(screen, (40,40,40), rect, border_radius=4)
+
+        pygame.draw.rect(screen, (160,160,160), rect, 1, border_radius=4)
+
+        txt = retro_small.render(
+            f"{i+1}. {c['type']}  |  Power: {c['power']}",
+            True,
+            (255,255,255)
+        )
+        screen.blit(txt, (rect.x + 8, rect.y + 4))
+    
+    # ---- TARGET TYPE SELECTION (AFTER CARD LIST) ----
+    type_y = list_y + len(cards) * row_h + 20
+    type_gap = 75
+    start_x = popup_x + popup_w//2 - (len(CARD_TYPES)*type_gap)//2
+
+    for i, t in enumerate(CARD_TYPES):
+        rect = pygame.Rect(start_x + i*type_gap, type_y, 70, 22)
+        STORE_TYPE_RECTS.append((t, rect))
+
+        col = (255,255,120) if t == store_target_type else (170,170,170)
+        pygame.draw.rect(screen, col, rect, 2)
+
+        screen.blit(
+            retro_small.render(t, True, col),
+            (rect.x + 6, rect.y + 3)
+        )
+
+    # ---- RESULT PREVIEW ----
+    preview_y = type_y + 40
+
+
+    preview_text = "SELECT 2 SAME TYPE CARDS"
+    preview_color = (170,170,170)
+
+    if len(store_selected_indices) == 2:
+        i1, i2 = list(store_selected_indices)
+        c1, c2 = cards[i1], cards[i2]
+
+        if c1["type"] == c2["type"] and store_target_type:
+            new_power = min(c1["power"] + c2["power"], CARD_MAX_POWER)
+            preview_text = f"RESULT → {store_target_type} | POWER {new_power}"
+            preview_color = (255,255,120)
+        elif c1["type"] != c2["type"]:
+            preview_text = "CARDS MUST BE SAME TYPE"
+            preview_color = (255,120,120)
+
+    txt = retro_small.render(preview_text, True, preview_color)
+    screen.blit(txt, (popup_x + popup_w//2 - txt.get_width()//2, preview_y))
+    
+    # ---- TRADE BUTTON ----
+    STORE_TRADE_BTN_RECT.center = (
+        popup_x + popup_w//2,
+        preview_y + 40
+    )
+    # ---- CLOSE BUTTON (TOP-RIGHT) ----
+    STORE_CLOSE_BTN_RECT.topleft = (
+        popup_x + popup_w - 36,
+        popup_y + 12
+    )
+
+    screen.blit(close_btn_img, STORE_CLOSE_BTN_RECT.topleft)
+
+
+    draw_image_button(
+        STORE_TRADE_BTN_RECT,
+        "TRADE",
+        STORE_TRADE_BTN_RECT.collidepoint(pygame.mouse.get_pos())
+    )
+
+
+def draw_gate_popup():
+    global selected_reward_index
+
+    popup_w, popup_h = 420, 420
+    popup_x = SCREEN_WIDTH//2 - popup_w//2+120
+    popup_y = SCREEN_HEIGHT//2 - popup_h//2
+
+    # ---- overlay ----
+    overlay = pygame.Surface(
+        (SCREEN_WIDTH - SIDEBAR_W, SCREEN_HEIGHT),
+        pygame.SRCALPHA
+    )
+    overlay.fill((0,0,0,140))
+    screen.blit(overlay, (SIDEBAR_W, 0))
+    
+
+    # ---- popup bg ----
+    screen.blit(store_popup_img, (popup_x, popup_y))
+
+
+    d = can_interact_gate()
+    if d is None:
+        return
+
+    give_type = get_next_room_type(d)
+    need_power = gate_cards[d]["power"]
+    rewards = gate_cards[d]["rewards"]
+
+    cx = popup_x + popup_w//2
+    y = popup_y + 80
+
+    # ---- TITLE ----
+    draw_banner_title("GATE TRADE", cx, popup_y + 15)
+
+    # ---- REQUIREMENT ----
+    txt = retro_small.render(
+        f"NEED {give_type} | POWER {need_power}",
+        True, (255,255,120)
+    )
+    screen.blit(txt, (cx - txt.get_width()//2, y))
+    y += 40
+
+    # ---- REWARD CARDS ----
+    for i, r in enumerate(rewards):
+        rx = cx - CARD_WIDTH - 20 + i*(CARD_WIDTH + 40)
+        ry = y
+
+        draw_full_card(r, rx, ry)
+
+        if selected_reward_index == i:
+            pygame.draw.rect(
+                screen,
+                (255,255,120),
+                (rx-4, ry-4, CARD_WIDTH+8, CARD_HEIGHT+8),
+                3
+            )
+
+    # ---- SWAP BUTTON ----
+    STORE_TRADE_BTN_RECT.center = (cx, y + CARD_HEIGHT + 60)
+    draw_image_button(
+        STORE_TRADE_BTN_RECT,
+        "SWAP",
+        STORE_TRADE_BTN_RECT.collidepoint(pygame.mouse.get_pos())
+    )
+    hint = retro_small.render(
+        "MOVE AWAY TO CANCEL SWAP",
+        True,
+        (180, 180, 180)
+    )
+    screen.blit(
+        hint,
+        (cx - hint.get_width() // 2,
+         popup_y + popup_h - 40)
+    )
 
 
 # =========================
@@ -1530,6 +1826,8 @@ while True:
     
     
     if game_state == STATE_MENU:
+        if not pygame.mixer.music.get_busy():
+            play_music(MUSIC_MENU)
         handle_menu_events()
         draw_main_menu()
         draw_cursor()
@@ -1591,7 +1889,9 @@ while True:
                     GAME_ENDED = True
 
 
-        handle_events()
+
+
+
     
 
 
@@ -1636,17 +1936,27 @@ while True:
     update_free_gate()
     
     gate_dir = can_interact_gate()
-    show_swap_ui = gate_dir is not None
+    show_swap_ui = False
+    show_gate_popup = gate_dir is not None
 
 
 
-    screen.fill((0,0,0))
+    # screen.fill((0,0,0))
 
     # Sidebar
-    pygame.draw.rect(screen, (20,20,20), (0,0,SIDEBAR_W,SCREEN_HEIGHT))
-    pygame.draw.rect(screen, (180,180,180), (0,0,SIDEBAR_W,SCREEN_HEIGHT), 2)
-
+    screen.blit(sidebar_bg, (0, 0))
+    cards_top = draw_cards_title()
+    cards_start_y = cards_top + 12
+    handle_events(cards_start_y)
     # Game box border
+    
+    # ===== WORLD BACKGROUND (MAIN ROOM + PREVIEWS) =====
+    # world_x = SIDEBAR_W
+    world_x = SIDEBAR_W
+    world_y = 0
+    screen.blit(bg_world, (world_x, world_y))
+    # screen.blit(world_border_img, (world_x, world_y))
+
     pygame.draw.rect(screen, (30,30,30), GAME_BOX_RECT)
     pygame.draw.rect(screen, (180,180,180), GAME_BOX_RECT, 2)
 
@@ -1675,26 +1985,30 @@ while True:
     # === STEP 5: draw animated player ===
     img = get_player_frame(player_dir, player_frame, moving)
     screen.blit(img, player.topleft)
+    
+    rows = (len(cards) - 1) // CARDS_PER_ROW + 1
+    cards_end_y = cards_start_y + rows * (CARD_HEIGHT - CARDS_ROW_OVERLAP)
 
+    trade_button_rect = draw_trade_button_center(cards_end_y)
+
+    # cards_top = draw_cards_title()
+    # CARDS_START_Y = cards_top + 12
     draw_press_e_hint()
-    draw_cards_title()
-    # draw_cards()
-    # draw_gate_card_popup()
-
-
-    # draw_cards()
-
-    # draw_store_ui()
-    # draw_game_hud()
     draw_sidebar_hud()
-    draw_cards()
-    draw_store_button_only()
+    # LEFT SIDEBAR & CARDS ARE ALWAYS DRAWN
+    draw_cards(cards_start_y)
     draw_minimap()
-    draw_gate_card_popup()
     draw_gate_message()
-    draw_swap_button()
+
+    # POPUPS DRAW ON TOP
     if show_store_popup:
+        PAD_X = 40
+        PAD_Y = 80
         draw_store_popup()
+    elif show_gate_popup:
+        draw_gate_popup()
+
+
 
 
     
@@ -1737,5 +2051,12 @@ while True:
     cursor_y = my
 
     screen.blit(cursor_img, (cursor_x, cursor_y))
+    
+    if not show_store_popup and not show_gate_popup:
+        world_x = SIDEBAR_W
+        world_y = 0
+        screen.blit(world_border_img, (world_x, world_y))
+
+
 
     pygame.display.flip()
