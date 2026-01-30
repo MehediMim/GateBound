@@ -30,11 +30,43 @@ FRAMES_PER_ROW = 4
 
 
 STATE_MENU = "menu"
+STATE_DIFFICULTY = "difficulty"
 STATE_HOWTO = "howto"
 STATE_GAME = "game"
 STATE_QUIT = "quit"
 
 game_state = STATE_MENU
+
+# =========================
+# DIFFICULTY LEVELS
+# =========================
+DIFFICULTY_EASY = "easy"
+DIFFICULTY_MEDIUM = "medium"
+DIFFICULTY_HARD = "hard"
+
+current_difficulty = DIFFICULTY_EASY
+
+# Difficulty settings
+difficulty_settings = {
+    DIFFICULTY_EASY: {
+        "max_points": 1000,
+        "point_decay": 1,
+        "minimap_radius": 5,
+        "store_uses": 3
+    },
+    DIFFICULTY_MEDIUM: {
+        "max_points": 500,
+        "point_decay": 1,
+        "minimap_radius": 3,
+        "store_uses": 2
+    },
+    DIFFICULTY_HARD: {
+        "max_points": 300,
+        "point_decay": 1,
+        "minimap_radius": 2,
+        "store_uses": 1
+    }
+}
 
 CARDS_START_X = 20
 CARDS_GAP_X = 15
@@ -676,18 +708,17 @@ def try_swap_with_gate(d, selected_indices):
         gate_message_timer = 90
         return False
 
-    # REMOVE GIVEN CARDS
-    for i in sorted(selected_indices, reverse=True):
-        cards.pop(i)
-
-    # ADD REWARD CARD
-    # MUST SELECT A REWARD
-
+    # REWARD SELECTION CHECK (BEFORE REMOVING CARDS!)
     if selected_reward_index is None:
         gate_message = "CHOOSE A REWARD!"
         gate_message_timer = 90
         return False
 
+    # NOW IT'S SAFE TO REMOVE GIVEN CARDS
+    for i in sorted(selected_indices, reverse=True):
+        cards.pop(i)
+
+    # ADD REWARD CARD
     reward = gate_card["rewards"][selected_reward_index]
     cards.append(reward)
     selected_reward_index = None
@@ -1307,7 +1338,7 @@ def draw_minimap():
     node = 14
     gap = 4
     step = node + gap
-    radius = 5  # how many rooms around current
+    radius = difficulty_settings[current_difficulty]["minimap_radius"]
 
     # background circle
     # pygame.draw.circle(screen, (20, 20, 20), center, radius_px)
@@ -1530,9 +1561,7 @@ def handle_menu_events():
             mx, my = e.pos
 
             if menu_buttons["start"].collidepoint(mx, my):
-                play_music(MUSIC_GAME)
-                reset_game()
-                game_state = STATE_GAME
+                game_state = STATE_DIFFICULTY
 
             elif menu_buttons["howto"].collidepoint(mx, my):
                 game_state = STATE_HOWTO
@@ -1553,6 +1582,116 @@ def handle_howto_events():
         if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
             game_state = STATE_MENU
 
+
+def handle_difficulty_events():
+    global game_state, current_difficulty, MAX_POINTS, POINT_DECAY_PER_SEC, store_uses_left
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+            game_state = STATE_MENU
+            return
+
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            SFX_CLICK.play()
+            mx, my = e.pos
+
+            # Create button rects
+            center_x = SCREEN_WIDTH // 2
+            start_y = SCREEN_HEIGHT // 2 - 100
+            button_gap = 80
+            button_w = 300
+            button_h = 60
+
+            easy_rect = pygame.Rect(center_x - button_w // 2, start_y, button_w, button_h)
+            medium_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap, button_w, button_h)
+            hard_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap * 2, button_w, button_h)
+
+            if easy_rect.collidepoint(mx, my):
+                current_difficulty = DIFFICULTY_EASY
+                apply_difficulty_settings()
+                play_music(MUSIC_GAME)
+                reset_game()
+                game_state = STATE_GAME
+
+            elif medium_rect.collidepoint(mx, my):
+                current_difficulty = DIFFICULTY_MEDIUM
+                apply_difficulty_settings()
+                play_music(MUSIC_GAME)
+                reset_game()
+                game_state = STATE_GAME
+
+            elif hard_rect.collidepoint(mx, my):
+                current_difficulty = DIFFICULTY_HARD
+                apply_difficulty_settings()
+                play_music(MUSIC_GAME)
+                reset_game()
+                game_state = STATE_GAME
+
+
+def apply_difficulty_settings():
+    global MAX_POINTS, POINT_DECAY_PER_SEC, store_uses_left, STORE_MAX_USES
+    
+    settings = difficulty_settings[current_difficulty]
+    MAX_POINTS = settings["max_points"]
+    POINT_DECAY_PER_SEC = settings["point_decay"]
+    STORE_MAX_USES = settings["store_uses"]
+    store_uses_left = STORE_MAX_USES
+
+
+def draw_difficulty_screen():
+    screen.blit(menu_bg, (0, 0))
+    
+    # Title
+    title = retro_font.render("SELECT DIFFICULTY", True, (255, 255, 255))
+    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 150))
+    
+    # Create button rects
+    center_x = SCREEN_WIDTH // 2
+    start_y = SCREEN_HEIGHT // 2 - 100
+    button_gap = 80
+    button_w = 300
+    button_h = 60
+    
+    mx, my = pygame.mouse.get_pos()
+    
+    easy_rect = pygame.Rect(center_x - button_w // 2, start_y, button_w, button_h)
+    medium_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap, button_w, button_h)
+    hard_rect = pygame.Rect(center_x - button_w // 2, start_y + button_gap * 2, button_w, button_h)
+    
+    # Easy button
+    easy_color = (120, 255, 120) if easy_rect.collidepoint(mx, my) else (80, 200, 80)
+    pygame.draw.rect(screen, easy_color, easy_rect, border_radius=8)
+    pygame.draw.rect(screen, (255, 255, 255), easy_rect, 3, border_radius=8)
+    easy_text = menu_font.render("EASY", True, (255, 255, 255))
+    easy_desc = retro_small.render("Time: 1000 | Map: Far | Trades: 3", True, (230, 230, 230))
+    screen.blit(easy_text, (center_x - easy_text.get_width() // 2, start_y + 10))
+    screen.blit(easy_desc, (center_x - easy_desc.get_width() // 2, start_y + 38))
+    
+    # Medium button
+    medium_color = (255, 200, 80) if medium_rect.collidepoint(mx, my) else (200, 150, 60)
+    pygame.draw.rect(screen, medium_color, medium_rect, border_radius=8)
+    pygame.draw.rect(screen, (255, 255, 255), medium_rect, 3, border_radius=8)
+    medium_text = menu_font.render("MEDIUM", True, (255, 255, 255))
+    medium_desc = retro_small.render("Time: 500 | Map: Medium | Trades: 2", True, (230, 230, 230))
+    screen.blit(medium_text, (center_x - medium_text.get_width() // 2, start_y + button_gap + 10))
+    screen.blit(medium_desc, (center_x - medium_desc.get_width() // 2, start_y + button_gap + 38))
+    
+    # Hard button
+    hard_color = (255, 80, 80) if hard_rect.collidepoint(mx, my) else (200, 60, 60)
+    pygame.draw.rect(screen, hard_color, hard_rect, border_radius=8)
+    pygame.draw.rect(screen, (255, 255, 255), hard_rect, 3, border_radius=8)
+    hard_text = menu_font.render("HARD", True, (255, 255, 255))
+    hard_desc = retro_small.render("Time: 300 | Map: Close | Trades: 1", True, (230, 230, 230))
+    screen.blit(hard_text, (center_x - hard_text.get_width() // 2, start_y + button_gap * 2 + 10))
+    screen.blit(hard_desc, (center_x - hard_desc.get_width() // 2, start_y + button_gap * 2 + 38))
+    
+    # Back hint
+    hint = retro_small.render("Press ESC to go back", True, (180, 180, 180))
+    screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, SCREEN_HEIGHT - 80))
 
 
 def reset_game():
@@ -1660,11 +1799,27 @@ def draw_sidebar_hud():
 
     cx = x + SIDEBAR_HUD_W // 2
     y0 = y + 30
-    gap = 26
+    gap = 30
 
-    # TEXT
-    draw_hud_line(f"POINTS: {points}", cx, y0, HUD_FONT_BIG,(255, 80, 80))
+    # Difficulty level colors
+    diff_colors = {
+        DIFFICULTY_EASY: (120, 255, 120),
+        DIFFICULTY_MEDIUM: (255, 200, 80),
+        DIFFICULTY_HARD: (255, 80, 80)
+    }
+    diff_color = diff_colors.get(current_difficulty, (255, 255, 255))
 
+    # LINE 0 — DIFFICULTY LEVEL
+    draw_hud_line(
+        f"LEVEL: {current_difficulty.upper()}", 
+        cx, 
+        y0, 
+        HUD_FONT_NORMAL,
+        diff_color
+    )
+    
+    # LINE 1 — POINTS (BIGGER)
+    draw_hud_line(f"POINTS: {points}", cx, y0 + gap, HUD_FONT_BIG, (255, 80, 80))
 def draw_store_popup():
     global STORE_CARD_RECTS, STORE_TYPE_RECTS
 
@@ -1919,6 +2074,13 @@ while True:
     if game_state == STATE_HOWTO:
         handle_howto_events()
         draw_howto()
+        draw_cursor()
+        pygame.display.flip()
+        continue
+    
+    if game_state == STATE_DIFFICULTY:
+        handle_difficulty_events()
+        draw_difficulty_screen()
         draw_cursor()
         pygame.display.flip()
         continue
