@@ -588,6 +588,7 @@ popup_y = SCREEN_HEIGHT // 2 - popup_h // 2
 # MOVEMENT
 # =========================
 def move(dx, dy):
+    global footstep_timer
     # X
     player.x += dx
     for w in get_blocking_walls():
@@ -831,19 +832,31 @@ def handle_events(cards_start_y):
         # STORE POPUP (BLOCK EVERYTHING)
         # ==================================================
         if show_store_popup:
+            # Set close button position BEFORE checking clicks
+            popup_w = 420
+            popup_h = 520
+            popup_x = SCREEN_WIDTH//2 - popup_w//2
+            popup_y = SCREEN_HEIGHT//2 - popup_h//2
+            STORE_CLOSE_BTN_RECT.topleft = (
+                popup_x + popup_w - 36,
+                popup_y + 12
+            )
+            
             if STORE_CLOSE_BTN_RECT.collidepoint(mx, my):
                 show_store_popup = False
                 store_selected_indices.clear()
                 store_target_type = None
                 return
 
-            if e.button == 3:
+            # Allow both left-click (button 1) and right-click (button 3) to select cards
+            if e.button == 1 or e.button == 3:
                 for i, rect in STORE_CARD_RECTS:
                     if rect.collidepoint(mx, my):
                         if i in store_selected_indices:
                             store_selected_indices.remove(i)
                         elif len(store_selected_indices) < 2:
                             store_selected_indices.add(i)
+                            SFX_CARD_SELECT.play()
                         return
 
             if e.button == 1:
@@ -863,7 +876,7 @@ def handle_events(cards_start_y):
         # ==================================================
         if e.button == 1:
 
-            for i, c in enumerate(cards[:8]):
+            for i, c in enumerate(cards):
                 row = i // cards_per_row
                 col = i % cards_per_row
 
@@ -1637,7 +1650,7 @@ def draw_store_popup():
     STORE_CARD_RECTS.clear()
     STORE_TYPE_RECTS.clear()
 
-    popup_w, popup_h = 420, 420
+    popup_w, popup_h = 420, 520
 
 
 
@@ -1657,9 +1670,9 @@ def draw_store_popup():
 
     # ---- STORE CARD LIST (TEXT ONLY) ----
     list_x = popup_x + PAD_X
-    list_y = popup_y + PAD_Y
+    list_y = popup_y + 60
 
-    row_h  = 26
+    row_h  = 24
 
     for i, c in enumerate(cards):
         y = list_y + i * row_h
@@ -1683,7 +1696,7 @@ def draw_store_popup():
         screen.blit(txt, (rect.x + 8, rect.y + 4))
     
     # ---- TARGET TYPE SELECTION (AFTER CARD LIST) ----
-    type_y = list_y + len(cards) * row_h + 20
+    type_y = list_y + len(cards) * row_h + 15
     type_gap = 75
     start_x = popup_x + popup_w//2 - (len(CARD_TYPES)*type_gap)//2
 
@@ -1700,7 +1713,7 @@ def draw_store_popup():
         )
 
     # ---- RESULT PREVIEW ----
-    preview_y = type_y + 40
+    preview_y = type_y + 35
 
 
     preview_text = "SELECT 2 SAME TYPE CARDS"
@@ -1724,7 +1737,7 @@ def draw_store_popup():
     # ---- TRADE BUTTON ----
     STORE_TRADE_BTN_RECT.center = (
         popup_x + popup_w//2,
-        preview_y + 40
+        preview_y + 35
     )
     # ---- CLOSE BUTTON (TOP-RIGHT) ----
     STORE_CLOSE_BTN_RECT.topleft = (
