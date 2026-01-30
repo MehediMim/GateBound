@@ -22,7 +22,7 @@ GAME_OVER = False
 GAME_WIN = False
 GAME_ENDED = False
 
-
+prev_show_gate_popup = False
 CAN_PASS_DOOR = False
 
 FRAME_SIZE = 64
@@ -748,6 +748,22 @@ STORE_TRADE_BTN_RECT = pygame.Rect(0, 0, btn_1.get_width(), btn_1.get_height())
 STORE_CARD_RECTS = []
 STORE_TYPE_RECTS = []
 
+def get_gate_card_positions(popup_x, popup_y):
+    cx = popup_x + 420 // 2
+    cards_y = popup_y + 120
+
+    gap_inner = 16
+    gap_group = 40
+
+    total_width = CARD_WIDTH * 3 + gap_group + gap_inner
+    group_left = cx - total_width // 2
+
+    give_x    = group_left
+    reward_x1 = give_x + CARD_WIDTH + gap_group
+    reward_x2 = reward_x1 + CARD_WIDTH + gap_inner
+
+    return give_x, reward_x1, reward_x2, cards_y
+
 def handle_events(cards_start_y):
     global pressed_e
     global selected_card_indices
@@ -803,70 +819,64 @@ def handle_events(cards_start_y):
             return
 
         # ==================================================
-        # GATE SWAP POPUP (DO NOT BLOCK SIDEBAR CARDS)
+        # GATE SWAP POPUP
         # ==================================================
         if show_gate_popup:
             popup_x = SCREEN_WIDTH // 2 - 420 // 2 + 120
             popup_y = SCREEN_HEIGHT // 2 - 420 // 2
-            # sync close button rect for gate popup
-            STORE_CLOSE_BTN_RECT.topleft = (
-                popup_x + 420 - 36,
-                popup_y + 12
-            )
-
 
             # ---- SWAP BUTTON ----
             if STORE_TRADE_BTN_RECT.collidepoint(mx, my):
                 d = can_interact_gate()
-                if d and selected_card_indices:
-                    if try_swap_with_gate(d, selected_card_indices):
-                        selected_card_indices.clear()
+                if d and selected_reward_index is not None:
+                    if try_swap_with_gate(d, selected_reward_index):
+                        selected_reward_index = None
                         show_gate_popup = False
                 return
 
-            # ---- REWARD SELECTION (ONLY IF CLICK INSIDE POPUP) ----
-            popup_x = SCREEN_WIDTH//2 - 420//2+120
-            popup_y = SCREEN_HEIGHT//2 - 420//2
+            # ---- REWARD SELECTION ----
             popup_rect = pygame.Rect(popup_x, popup_y, 420, 420)
-
             if popup_rect.collidepoint(mx, my):
                 d = can_interact_gate()
                 if d:
                     gate_card = get_or_create_gate_card(current, d)
                     rewards = gate_card["rewards"]
-                    cx = popup_x + 420//2
-                    y = popup_y + 120
 
-                    for i, r in enumerate(rewards):
-                        rx = cx - CARD_WIDTH - 20 + i*(CARD_WIDTH + 40)
-                        ry = y
-                        if pygame.Rect(rx, ry, CARD_WIDTH, CARD_HEIGHT).collidepoint(mx, my):
+                    # 🔥 SINGLE SOURCE OF TRUTH
+                    give_x, reward_x1, reward_x2, cards_y = get_gate_card_positions(
+                        popup_x, popup_y
+                    )
+
+                    reward_positions = [reward_x1, reward_x2]
+
+                    for i, rx in enumerate(reward_positions):
+                        if pygame.Rect(rx, cards_y, CARD_WIDTH, CARD_HEIGHT).collidepoint(mx, my):
                             selected_reward_index = i
+                            SFX_CARD_SELECT.play()
+                            return
                 return
-            # ⬇️ IMPORTANT: clicks OUTSIDE popup fall through to sidebar cards
 
         # ==================================================
-        # STORE POPUP (BLOCK EVERYTHING)
+        # STORE POPUP
         # ==================================================
         if show_store_popup:
-            # Set close button position BEFORE checking clicks
             popup_w = 420
             popup_h = 520
-            popup_x = SCREEN_WIDTH//2 - popup_w//2
-            popup_y = SCREEN_HEIGHT//2 - popup_h//2
+            popup_x = SCREEN_WIDTH // 2 - popup_w // 2
+            popup_y = SCREEN_HEIGHT // 2 - popup_h // 2
+
             STORE_CLOSE_BTN_RECT.topleft = (
                 popup_x + popup_w - 36,
                 popup_y + 12
             )
-            
+
             if STORE_CLOSE_BTN_RECT.collidepoint(mx, my):
                 show_store_popup = False
                 store_selected_indices.clear()
                 store_target_type = None
                 return
 
-            # Allow both left-click (button 1) and right-click (button 3) to select cards
-            if e.button == 1 or e.button == 3:
+            if e.button in (1, 3):
                 for i, rect in STORE_CARD_RECTS:
                     if rect.collidepoint(mx, my):
                         if i in store_selected_indices:
@@ -889,10 +899,9 @@ def handle_events(cards_start_y):
             return
 
         # ==================================================
-        # LEFT SIDEBAR CARD SELECTION (ALLOWED DURING GATE POPUP)
+        # LEFT SIDEBAR CARD SELECTION
         # ==================================================
         if e.button == 1:
-
             for i, c in enumerate(cards):
                 row = i // cards_per_row
                 col = i % cards_per_row
@@ -1271,7 +1280,12 @@ def get_blocking_walls():
 
 def draw_cursor():
     mx, my = pygame.mouse.get_pos()
-    screen.blit(cursor_img, (mx, my))
+    screen.blit(
+        cursor_img,
+        (mx - cursor_img.get_width() // 2,
+         my - cursor_img.get_height() // 2)
+    )
+    
 
 
 def get_next_room_type(d):
@@ -1773,27 +1787,23 @@ def draw_store_popup():
         "TRADE",
         STORE_TRADE_BTN_RECT.collidepoint(pygame.mouse.get_pos())
     )
-
-
 def draw_gate_popup():
     global selected_reward_index
 
     popup_w, popup_h = 420, 420
-    popup_x = SCREEN_WIDTH//2 - popup_w//2+120
-    popup_y = SCREEN_HEIGHT//2 - popup_h//2
+    popup_x = SCREEN_WIDTH // 2 - popup_w // 2 + 120
+    popup_y = SCREEN_HEIGHT // 2 - popup_h // 2
 
-    # ---- overlay ----
+    # ---- overlay (world side only) ----
     overlay = pygame.Surface(
         (SCREEN_WIDTH - SIDEBAR_W, SCREEN_HEIGHT),
         pygame.SRCALPHA
     )
-    overlay.fill((0,0,0,140))
+    overlay.fill((0, 0, 0, 140))
     screen.blit(overlay, (SIDEBAR_W, 0))
-    
 
-    # ---- popup bg ----
+    # ---- popup background ----
     screen.blit(store_popup_img, (popup_x, popup_y))
-
 
     d = can_interact_gate()
     if d is None:
@@ -1804,42 +1814,87 @@ def draw_gate_popup():
     need_power = gate_card["power"]
     rewards = gate_card["rewards"]
 
-    cx = popup_x + popup_w//2
-    y = popup_y + 80
+    cx = popup_x + popup_w // 2
+    cards_y = popup_y + 120   # unified baseline
 
-    # ---- TITLE ----
-    draw_banner_title("GATE TRADE", cx, popup_y + 15)
+    # ==================================================
+    # TITLE
+    # ==================================================
+    draw_banner_title("GATE TRADE", cx, popup_y + 18)
 
-    # ---- REQUIREMENT ----
-    txt = retro_small.render(
-        f"NEED {give_type} | POWER {need_power}",
-        True, (255,255,120)
+    # ==================================================
+    # CARD POSITIONS (INTENTIONAL, NOT CLEVER)
+    # ==================================================
+    gap_inner = 16        # gap between reward cards
+    gap_group = 40        # 🔥 gap between GIVE and GET groups
+
+    # total width = 1 give + gap_group + 2 rewards + inner gap
+    total_width = CARD_WIDTH * 3 + gap_group + gap_inner
+
+    group_left = cx - total_width // 2
+
+    # YOU GIVE
+    give_x, reward_x1, reward_x2, cards_y = get_gate_card_positions(popup_x, popup_y)
+
+    # ==================================================
+    # LABELS
+    # ==================================================
+    give_lbl = retro_small.render("YOU GIVE", True, (180, 180, 180))
+    get_lbl  = retro_small.render("YOU GET (CHOOSE ONE)", True, (180, 180, 180))
+
+    screen.blit(
+        give_lbl,
+        (give_x + CARD_WIDTH // 2 - give_lbl.get_width() // 2,
+         cards_y - 24)
     )
-    screen.blit(txt, (cx - txt.get_width()//2, y))
-    y += 40
 
-    # ---- REWARD CARDS ----
-    for i, r in enumerate(rewards):
-        rx = cx - CARD_WIDTH - 20 + i*(CARD_WIDTH + 40)
-        ry = y
+    screen.blit(
+        get_lbl,
+        ((reward_x1 + reward_x2 + CARD_WIDTH) // 2 - get_lbl.get_width() // 2,
+         cards_y - 24)
+    )
 
-        draw_full_card(r, rx, ry)
+    # ==================================================
+    # YOU GIVE (REQUIRED CARD)
+    # ==================================================
+    draw_full_card(
+        {"type": give_type, "power": need_power},
+        give_x,
+        cards_y
+    )
 
-        if selected_reward_index == i:
-            pygame.draw.rect(
-                screen,
-                (255,255,120),
-                (rx-4, ry-4, CARD_WIDTH+8, CARD_HEIGHT+8),
-                3
-            )
+    # ==================================================
+    # YOU GET (REWARD CARDS)
+    # ==================================================
+    draw_full_card(rewards[0], reward_x1, cards_y)
+    draw_full_card(rewards[1], reward_x2, cards_y)
 
-    # ---- SWAP BUTTON ----
-    STORE_TRADE_BTN_RECT.center = (cx, y + CARD_HEIGHT + 60)
+    # ---- selected highlight ----
+    if selected_reward_index is not None:
+        rx = reward_x1 if selected_reward_index == 0 else reward_x2
+        pygame.draw.rect(
+            screen,
+            (255, 255, 120),
+            (rx - 4, cards_y - 4, CARD_WIDTH + 8, CARD_HEIGHT + 8),
+            3
+        )
+
+    # ==================================================
+    # SWAP BUTTON
+    # ==================================================
+    STORE_TRADE_BTN_RECT.center = (
+        cx,
+        cards_y + CARD_HEIGHT + 62
+    )
     draw_image_button(
         STORE_TRADE_BTN_RECT,
         "SWAP",
         STORE_TRADE_BTN_RECT.collidepoint(pygame.mouse.get_pos())
     )
+
+    # ==================================================
+    # CANCEL HINT
+    # ==================================================
     hint = retro_small.render(
         "MOVE AWAY TO CANCEL SWAP",
         True,
@@ -1848,7 +1903,7 @@ def draw_gate_popup():
     screen.blit(
         hint,
         (cx - hint.get_width() // 2,
-         popup_y + popup_h - 40)
+         popup_y + popup_h - 36)
     )
 
 
@@ -1994,6 +2049,11 @@ while True:
 
 
 
+    # 🔥 RESET SELECTION ONLY WHEN POPUP JUST OPENED
+    if show_gate_popup and not prev_show_gate_popup:
+        selected_reward_index = None
+
+    prev_show_gate_popup = show_gate_popup
     # screen.fill((0,0,0))
 
     # Sidebar
