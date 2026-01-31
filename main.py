@@ -137,6 +137,10 @@ GAME_ENDED = False
 
 prev_show_gate_popup = False
 CAN_PASS_DOOR = False
+CONFIRM_BTN_OFFSET_X = 0   # try 0 → adjust ±10 if needed
+
+# Back to menu button
+show_menu_confirmation = False
 
 FRAME_SIZE = 64
 FRAMES_PER_ROW = 4
@@ -165,19 +169,22 @@ difficulty_settings = {
         "max_points": 1000,
         "point_decay": 1,
         "minimap_radius": 5,
-        "store_uses": 3
+        "store_uses": 3,
+        "score_multiplier": 1
     },
     DIFFICULTY_MEDIUM: {
         "max_points": 500,
         "point_decay": 1,
         "minimap_radius": 3,
-        "store_uses": 2
+        "store_uses": 2,
+        "score_multiplier": 3
     },
     DIFFICULTY_HARD: {
         "max_points": 300,
         "point_decay": 1,
         "minimap_radius": 2,
-        "store_uses": 1
+        "store_uses": 1,
+        "score_multiplier": 5
     }
 }
 
@@ -236,6 +243,8 @@ PREVIEW_MARGIN = ROOM_DRAW // 2     # space for half rooms
 
 SCREEN_WIDTH  = SIDEBAR_W + ROOM_DRAW + PREVIEW_MARGIN * 2
 SCREEN_HEIGHT = ROOM_DRAW + PREVIEW_MARGIN * 2
+MENU_CONFIRM_YES_RECT = pygame.Rect(0, 0, 0, 0)
+MENU_CONFIRM_NO_RECT  = pygame.Rect(0, 0, 0, 0)
 
 
 # =========================
@@ -413,6 +422,11 @@ pygame.mixer.init(
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 idle_sheet = pygame.image.load("assets/player_idle.png").convert_alpha()
 walk_sheet = pygame.image.load("assets/player_walk.png").convert_alpha()
+
+
+menu_confirm_bg = pygame.image.load("assets/buttons/Asset 6.png").convert_alpha()
+menu_confirm_bg = pygame.transform.smoothscale(menu_confirm_bg, (400, 200))
+
 
 pygame.display.set_caption("Tower Puzzle — Rooms (10x10)")
 clock = pygame.time.Clock()
@@ -973,17 +987,18 @@ def try_swap_with_gate(d, selected_indices):
         gate_message_timer = 90
         return False
 
-    # REWARD SELECTION CHECK (BEFORE REMOVING CARDS!)
+    # REMOVE GIVEN CARDS
+    for i in sorted(selected_indices, reverse=True):
+        cards.pop(i)
+
+    # ADD REWARD CARD
+    # MUST SELECT A REWARD
+
     if selected_reward_index is None:
         gate_message = "CHOOSE A REWARD!"
         gate_message_timer = 90
         return False
 
-    # NOW IT'S SAFE TO REMOVE GIVEN CARDS
-    for i in sorted(selected_indices, reverse=True):
-        cards.pop(i)
-
-    # ADD REWARD CARD
     reward = gate_card["rewards"][selected_reward_index]
     cards.append(reward)
     selected_reward_index = None
@@ -1041,6 +1056,7 @@ def draw_start_end_rooms():
 
 TRADE_BTN_RECT = pygame.Rect(0, 0, btn_1.get_width(), btn_1.get_height())
 STORE_TRADE_BTN_RECT = pygame.Rect(0, 0, btn_1.get_width(), btn_1.get_height())
+BACK_TO_MENU_BTN_RECT = pygame.Rect(0, 0, 50, 50)
 STORE_CARD_RECTS = []
 STORE_TYPE_RECTS = []
 
@@ -1068,6 +1084,8 @@ def handle_events(cards_start_y):
     global store_target_type
     global show_store_popup
     global show_gate_popup
+    global show_menu_confirmation
+    global game_state
 
     pressed_e = False
 
@@ -1093,6 +1111,11 @@ def handle_events(cards_start_y):
                 pressed_e = True
 
             if e.key == pygame.K_ESCAPE:
+                # Close menu confirmation if open
+                if show_menu_confirmation:
+                    show_menu_confirmation = False
+                    return
+                # Otherwise close popups
                 show_store_popup = False
                 show_gate_popup = False
                 selected_reward_index = None
@@ -1105,6 +1128,29 @@ def handle_events(cards_start_y):
             continue
 
         mx, my = e.pos
+        # ===============================
+        # MENU CONFIRMATION DIALOG (HIGHEST PRIORITY)
+        # ===============================
+        if show_menu_confirmation:
+            if MENU_CONFIRM_YES_RECT.collidepoint(mx, my):
+                game_state = STATE_MENU
+                show_menu_confirmation = False
+                return
+        
+            if MENU_CONFIRM_NO_RECT.collidepoint(mx, my):
+                show_menu_confirmation = False
+                return
+        
+            return
+        
+
+        # ===============================
+        # BACK TO MENU BUTTON (if no popups)
+        # ===============================
+        if not show_store_popup and not show_gate_popup:
+            if BACK_TO_MENU_BTN_RECT.collidepoint(mx, my):
+                show_menu_confirmation = True
+                return
 
         # ===============================
         # TRADE BUTTON (LEFT SIDEBAR)
@@ -1263,6 +1309,79 @@ def change_room(direction):
 
         player.center = SPAWN
         passed_free_gate = {k: False for k in passed_free_gate}
+
+def draw_back_to_menu_button():
+    """Draw back-to-menu button using CLOSE icon as background"""
+    # Top-right corner
+    BACK_TO_MENU_BTN_RECT.size = close_btn_img.get_size()
+    BACK_TO_MENU_BTN_RECT.x = SCREEN_WIDTH - BACK_TO_MENU_BTN_RECT.width - 20
+    BACK_TO_MENU_BTN_RECT.y = 20
+
+    mx, my = pygame.mouse.get_pos()
+    hover = BACK_TO_MENU_BTN_RECT.collidepoint(mx, my)
+
+    # Slight hover glow
+    if hover:
+        glow = pygame.Surface(
+            (BACK_TO_MENU_BTN_RECT.width + 6, BACK_TO_MENU_BTN_RECT.height + 6),
+            pygame.SRCALPHA
+        )
+        glow.fill((255, 255, 255, 40))
+        screen.blit(glow, (BACK_TO_MENU_BTN_RECT.x - 3, BACK_TO_MENU_BTN_RECT.y - 3))
+
+    # Draw close button image
+    screen.blit(close_btn_img, BACK_TO_MENU_BTN_RECT.topleft)
+def draw_menu_confirmation_dialog():
+    global MENU_CONFIRM_YES_RECT, MENU_CONFIRM_NO_RECT
+
+    # ---- overlay ----
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 180))
+    screen.blit(overlay, (0, 0))
+
+    # ---- dialog ----
+    dialog_w, dialog_h = menu_confirm_bg.get_size()
+    dialog_x = SCREEN_WIDTH // 2 - dialog_w // 2
+    dialog_y = SCREEN_HEIGHT // 2 - dialog_h // 2
+
+    screen.blit(menu_confirm_bg, (dialog_x, dialog_y))
+
+    # ---- text ----
+    title = retro_font.render("RETURN TO MENU?", True, (255, 200, 80))
+    warning = retro_small.render("Progress will be lost!", True, (100, 100, 100))
+
+    screen.blit(title, (dialog_x + dialog_w//2 - title.get_width()//2, dialog_y + 60))
+    screen.blit(warning, (dialog_x + dialog_w//2 - warning.get_width()//2, dialog_y + 86))
+
+    # ---- buttons (OPTICAL CENTER) ----
+    # NEW (match rect to image size)
+    button_w, button_h = btn_1.get_size()
+
+    button_gap = 30
+    button_y = dialog_y + dialog_h - 62
+
+    center_x = dialog_x + dialog_w // 2
+
+    MENU_CONFIRM_YES_RECT = pygame.Rect(
+        center_x - button_gap//2 - button_w,
+        button_y,
+        button_w,
+        button_h
+    )
+
+    MENU_CONFIRM_NO_RECT = pygame.Rect(
+        center_x + button_gap//2,
+        button_y,
+        button_w,
+        button_h
+    )
+
+    # ---- draw buttons ----
+    mx, my = pygame.mouse.get_pos()
+    draw_image_button(MENU_CONFIRM_YES_RECT, "YES",
+                      MENU_CONFIRM_YES_RECT.collidepoint(mx, my))
+    draw_image_button(MENU_CONFIRM_NO_RECT, "NO",
+                      MENU_CONFIRM_NO_RECT.collidepoint(mx, my))
 
 
 def can_use_card_for_gate(card, d):
@@ -2019,6 +2138,19 @@ def draw_difficulty_screen():
     screen.blit(hint, (SCREEN_WIDTH // 2 - hint.get_width() // 2, SCREEN_HEIGHT - 80))
 
 
+def handle_howto_events():
+    global game_state
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+            game_state = STATE_MENU
+
+
+
 def reset_game():
     global current, visited_rooms, explored_rooms
     global cards, points, GAME_OVER, GAME_WIN, GAME_ENDED
@@ -2454,20 +2586,53 @@ while True:
 
             if GAME_OVER:
                 txt = retro_font.render("GAME OVER", True, (255, 80, 80))
+                screen.blit(
+                    txt,
+                    (SCREEN_WIDTH // 2 - txt.get_width() // 2,
+                     SCREEN_HEIGHT // 2 - txt.get_height() // 2)
+                )
             else:
+                # Calculate final score
+                score_multiplier = difficulty_settings[current_difficulty]["score_multiplier"]
+                final_score = points * score_multiplier
+                
+                # "YOU ESCAPED!" title
                 txt = retro_font.render("YOU ESCAPED!", True, (80, 255, 120))
-
-            screen.blit(
-                txt,
-                (SCREEN_WIDTH // 2 - txt.get_width() // 2,
-                 SCREEN_HEIGHT // 2 - txt.get_height() // 2)
-            )
+                screen.blit(
+                    txt,
+                    (SCREEN_WIDTH // 2 - txt.get_width() // 2,
+                     SCREEN_HEIGHT // 2 - 60)
+                )
+                
+                # "FINAL SCORE:" label
+                score_label = retro_small.render("FINAL SCORE:", True, (200, 200, 200))
+                screen.blit(
+                    score_label,
+                    (SCREEN_WIDTH // 2 - score_label.get_width() // 2,
+                     SCREEN_HEIGHT // 2)
+                )
+                
+                # Score number in large golden text
+                score_text = retro_font.render(str(final_score), True, (255, 215, 0))
+                screen.blit(
+                    score_text,
+                    (SCREEN_WIDTH // 2 - score_text.get_width() // 2,
+                     SCREEN_HEIGHT // 2 + 30)
+                )
+                
+                # Show calculation breakdown
+                breakdown = retro_small.render(f"({points} points × {score_multiplier})", True, (150, 150, 150))
+                screen.blit(
+                    breakdown,
+                    (SCREEN_WIDTH // 2 - breakdown.get_width() // 2,
+                     SCREEN_HEIGHT // 2 + 75)
+                )
 
             hint = retro_small.render("Press ESC or click to return to menu", True, (180, 180, 180))
             screen.blit(
                 hint,
                 (SCREEN_WIDTH // 2 - hint.get_width() // 2,
-                 SCREEN_HEIGHT // 2 + 40)
+                 SCREEN_HEIGHT // 2 + 120)
             )
             
             draw_cursor()
@@ -2629,6 +2794,13 @@ while True:
     elif show_gate_popup:
         draw_gate_popup()
 
+    # BACK TO MENU BUTTON (always visible during gameplay)
+    draw_back_to_menu_button()
+    
+    # MENU CONFIRMATION DIALOG (top layer)
+    if show_menu_confirmation:
+        draw_menu_confirmation_dialog()
+
 
 
 
@@ -2673,7 +2845,7 @@ while True:
 
     screen.blit(cursor_img, (cursor_x, cursor_y))
     
-    if not show_store_popup and not show_gate_popup:
+    if not show_store_popup and not show_gate_popup and not show_menu_confirmation:
         world_x = SIDEBAR_W
         world_y = 0
         screen.blit(world_border_img, (world_x, world_y))
