@@ -55,19 +55,22 @@ difficulty_settings = {
         "max_points": 1000,
         "point_decay": 1,
         "minimap_radius": 5,
-        "store_uses": 3
+        "store_uses": 3,
+        "score_multiplier": 1
     },
     DIFFICULTY_MEDIUM: {
         "max_points": 500,
         "point_decay": 1,
         "minimap_radius": 3,
-        "store_uses": 2
+        "store_uses": 2,
+        "score_multiplier": 3
     },
     DIFFICULTY_HARD: {
         "max_points": 300,
         "point_decay": 1,
         "minimap_radius": 2,
-        "store_uses": 1
+        "store_uses": 1,
+        "score_multiplier": 5
     }
 }
 
@@ -2245,20 +2248,53 @@ while True:
 
             if GAME_OVER:
                 txt = retro_font.render("GAME OVER", True, (255, 80, 80))
+                screen.blit(
+                    txt,
+                    (SCREEN_WIDTH // 2 - txt.get_width() // 2,
+                     SCREEN_HEIGHT // 2 - txt.get_height() // 2)
+                )
             else:
+                # Calculate final score
+                score_multiplier = difficulty_settings[current_difficulty]["score_multiplier"]
+                final_score = points * score_multiplier
+                
+                # "YOU ESCAPED!" title
                 txt = retro_font.render("YOU ESCAPED!", True, (80, 255, 120))
-
-            screen.blit(
-                txt,
-                (SCREEN_WIDTH // 2 - txt.get_width() // 2,
-                 SCREEN_HEIGHT // 2 - txt.get_height() // 2)
-            )
+                screen.blit(
+                    txt,
+                    (SCREEN_WIDTH // 2 - txt.get_width() // 2,
+                     SCREEN_HEIGHT // 2 - 60)
+                )
+                
+                # "FINAL SCORE:" label
+                score_label = retro_small.render("FINAL SCORE:", True, (200, 200, 200))
+                screen.blit(
+                    score_label,
+                    (SCREEN_WIDTH // 2 - score_label.get_width() // 2,
+                     SCREEN_HEIGHT // 2)
+                )
+                
+                # Score number in large golden text
+                score_text = retro_font.render(str(final_score), True, (255, 215, 0))
+                screen.blit(
+                    score_text,
+                    (SCREEN_WIDTH // 2 - score_text.get_width() // 2,
+                     SCREEN_HEIGHT // 2 + 30)
+                )
+                
+                # Show calculation breakdown
+                breakdown = retro_small.render(f"({points} points × {score_multiplier})", True, (150, 150, 150))
+                screen.blit(
+                    breakdown,
+                    (SCREEN_WIDTH // 2 - breakdown.get_width() // 2,
+                     SCREEN_HEIGHT // 2 + 75)
+                )
 
             hint = retro_small.render("Press ESC or click to return to menu", True, (180, 180, 180))
             screen.blit(
                 hint,
                 (SCREEN_WIDTH // 2 - hint.get_width() // 2,
-                 SCREEN_HEIGHT // 2 + 40)
+                 SCREEN_HEIGHT // 2 + 120)
             )
             
             draw_cursor()
