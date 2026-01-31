@@ -907,8 +907,16 @@ player = pygame.Rect(0, 0, 16, 16)
 player.center = SPAWN
 
 
+# Generate finish room with minimum distance from start
 finish_room = get_random_room_id()
-while abs(rooms[finish_room]["pos"][0] - rooms[current]["pos"][0]) < 4:
+while True:
+    start_x, start_y = rooms[current]["pos"]
+    end_x, end_y = rooms[finish_room]["pos"]
+    # Calculate Manhattan distance (total rooms to travel)
+    distance = abs(end_x - start_x) + abs(end_y - start_y)
+    # Require minimum distance of 6 rooms
+    if distance >= 6:
+        break
     finish_room = get_random_room_id()
 
 # =========================
@@ -1324,6 +1332,9 @@ def change_room(direction):
 
         player.center = SPAWN
         passed_free_gate = {k: False for k in passed_free_gate}
+        
+        # Check if player reached the goal
+        check_finish()
 
 def draw_back_to_menu_button():
     """Draw back-to-menu button using CLOSE icon as background"""
@@ -1817,9 +1828,9 @@ def draw_minimap():
             inside_circle = (rx - center[0])**2 + (ry - center[1])**2 <= radius_px**2
 
             # ==================================================
-            # 1️⃣ ALWAYS draw GOAL OUTLINE (even outside circle)
+            # 1️⃣ Draw GOAL OUTLINE only if explored or inside circle
             # ==================================================
-            if rid == finish_room:
+            if rid == finish_room and (rid in explored_rooms or inside_circle):
                 pygame.draw.rect(
                     screen,
                     (255, 80, 80),
