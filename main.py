@@ -117,13 +117,14 @@ You lose when points reach zero.
 """.strip()
 
 
+last_printed_room = None
 
 ROOM_ORIGINAL = 800
 ROOM_SCALE = 0.5
 ROOM_DRAW = int(ROOM_ORIGINAL * ROOM_SCALE)  # 512
 FPS = 60
 PLAYER_SPEED = 5
-DEBUG = False
+DEBUG = True
 CARD_WIDTH  = 90
 CARD_HEIGHT = 160   # 180 × 16 / 9 ≈ 320
 footstep_timer = 0
@@ -488,6 +489,9 @@ btn_2= pygame.image.load("assets/buttons/Asset 2.png").convert_alpha()
 
 btn_3= pygame.image.load("assets/buttons/Asset 4.png").convert_alpha()
 # btn_quit_hover = pygame.image.load("assets/btn_quit_hover.png").convert_alpha()
+
+msg_bg = pygame.image.load("assets/buttons/Asset 6.png").convert_alpha()
+msg_bg = pygame.transform.smoothscale(msg_bg, (420, 90))
 
 cursor_img = pygame.image.load("assets/buttons/mouse.png").convert_alpha()
 pygame.mouse.set_visible(False)
@@ -1015,6 +1019,17 @@ def try_swap_with_gate(d, selected_indices):
     rooms[nxt]["open_gates"][opposite[d]] = True
 
     change_room(d)
+    
+    
+    global last_printed_room
+
+    if current != last_printed_room:
+        print(f"[ROOM CHANGE]")
+        print(f"START ROOM : {START_ROOM}")
+        print(f"END ROOM   : {finish_room}")
+        print(f"CURRENT    : {current}")
+        print("-" * 30)
+        last_printed_room = current
     check_finish()
     gate_message = "GATE OPENED!"
     gate_message_timer = 90
@@ -1584,17 +1599,32 @@ def draw_full_card(card, x, y):
 
     draw_card_power(x, y, card["power"])
 
-
 def draw_gate_message():
-    if gate_message_timer <= 0:
+    if gate_message_timer <= 0 or not gate_message:
         return
 
-    txt = retro_font.render(gate_message, True, (255, 200, 120))
+    bg_w, bg_h = msg_bg.get_size()
+
+    # Position: bottom-center of room area
+    cx = ROOM_RECT.centerx
+    y  = ROOM_RECT.bottom + 20
+
+    bg_x = cx - bg_w // 2
+    bg_y = y
+
+    # Draw background
+    screen.blit(msg_bg, (bg_x, bg_y))
+
+    # Draw text
+    txt = retro_font.render(gate_message, True, (255, 220, 120))
     screen.blit(
         txt,
-        (ROOM_RECT.centerx - txt.get_width() // 2,
-         ROOM_RECT.centery + CARD_HEIGHT + 80)
+        (
+            cx - txt.get_width() // 2,
+            bg_y + bg_h // 2 - txt.get_height() // 2
+        )
     )
+
 
 
 def draw_debug_borders():
@@ -2528,6 +2558,24 @@ def draw_gate_popup():
          popup_y + popup_h - 36)
     )
 
+def draw_room_debug_info():
+    if not DEBUG:
+        return
+
+    lines = [
+        f"START ROOM : {START_ROOM}",
+        f"END ROOM   : {finish_room}",
+        f"CURRENT    : {current}",
+    ]
+
+    x = SIDEBAR_W + 20
+    y = 20
+    gap = 18
+
+    for i, line in enumerate(lines):
+        txt = retro_small.render(line, True, (255, 120, 120))
+        screen.blit(txt, (x, y + i * gap))
+
 
 # =========================
 # LOOP
@@ -2784,7 +2832,7 @@ while True:
     # LEFT SIDEBAR & CARDS ARE ALWAYS DRAWN
     draw_cards(cards_start_y)
     draw_minimap()
-    draw_gate_message()
+    # draw_gate_message()
 
     # POPUPS DRAW ON TOP
     if show_store_popup:
@@ -2850,6 +2898,6 @@ while True:
         world_y = 0
         screen.blit(world_border_img, (world_x, world_y))
 
-
-
+    draw_room_debug_info()
+    draw_gate_message()
     pygame.display.flip()
